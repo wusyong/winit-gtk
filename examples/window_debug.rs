@@ -5,18 +5,14 @@
 use simple_logger::SimpleLogger;
 use winit::{
     dpi::{LogicalSize, PhysicalSize},
-    event::{DeviceEvent, ElementState, Event, KeyEvent, RawKeyEvent, WindowEvent},
-    event_loop::{DeviceEvents, EventLoop},
-    keyboard::{Key, KeyCode},
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event_loop::{DeviceEventFilter, EventLoop},
     window::{Fullscreen, WindowBuilder},
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("A fantastic window!")
@@ -36,31 +32,29 @@ fn main() -> Result<(), impl std::error::Error> {
     let mut minimized = false;
     let mut visible = true;
 
-    event_loop.listen_device_events(DeviceEvents::Always);
+    event_loop.set_device_event_filter(DeviceEventFilter::Never);
 
     event_loop.run(move |event, _, control_flow| {
         control_flow.set_wait();
 
         match event {
-            // This used to use the virtual key, but the new API
-            // only provides the `physical_key` (`Code`).
             Event::DeviceEvent {
                 event:
-                    DeviceEvent::Key(RawKeyEvent {
-                        physical_key,
-                        state: ElementState::Released,
+                    DeviceEvent::Key(KeyboardInput {
+                        virtual_keycode: Some(key),
+                        state: ElementState::Pressed,
                         ..
                     }),
                 ..
-            } => match physical_key {
-                KeyCode::KeyM => {
+            } => match key {
+                VirtualKeyCode::M => {
                     if minimized {
                         minimized = !minimized;
                         window.set_minimized(minimized);
                         window.focus_window();
                     }
                 }
-                KeyCode::KeyV => {
+                VirtualKeyCode::V => {
                     if !visible {
                         visible = !visible;
                         window.set_visible(visible);
@@ -68,72 +62,71 @@ fn main() -> Result<(), impl std::error::Error> {
                 }
                 _ => (),
             },
-            Event::WindowEvent { window_id, event } => match event {
-                WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            logical_key: Key::Character(key_str),
-                            state: ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                } => match key_str.as_ref() {
-                    // WARNING: Consider using `key_without_modifers()` if available on your platform.
-                    // See the `key_binding` example
-                    "e" => {
-                        fn area(size: PhysicalSize<u32>) -> u32 {
-                            size.width * size.height
-                        }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(key),
+                                state: ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => match key {
+                VirtualKeyCode::E => {
+                    fn area(size: PhysicalSize<u32>) -> u32 {
+                        size.width * size.height
+                    }
 
-                        let monitor = window.current_monitor().unwrap();
-                        if let Some(mode) = monitor
-                            .video_modes()
-                            .max_by(|a, b| area(a.size()).cmp(&area(b.size())))
-                        {
-                            window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
-                        } else {
-                            eprintln!("no video modes available");
-                        }
+                    let monitor = window.current_monitor().unwrap();
+                    if let Some(mode) = monitor
+                        .video_modes()
+                        .max_by(|a, b| area(a.size()).cmp(&area(b.size())))
+                    {
+                        window.set_fullscreen(Some(Fullscreen::Exclusive(mode)));
+                    } else {
+                        eprintln!("no video modes available");
                     }
-                    "f" => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        } else {
-                            let monitor = window.current_monitor();
-                            window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
-                        }
+                }
+                VirtualKeyCode::F => {
+                    if window.fullscreen().is_some() {
+                        window.set_fullscreen(None);
+                    } else {
+                        let monitor = window.current_monitor();
+                        window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
                     }
-                    "p" => {
-                        if window.fullscreen().is_some() {
-                            window.set_fullscreen(None);
-                        } else {
-                            window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-                        }
+                }
+                VirtualKeyCode::P => {
+                    if window.fullscreen().is_some() {
+                        window.set_fullscreen(None);
+                    } else {
+                        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
                     }
-                    "m" => {
-                        minimized = !minimized;
-                        window.set_minimized(minimized);
-                    }
-                    "q" => {
-                        control_flow.set_exit();
-                    }
-                    "v" => {
-                        visible = !visible;
-                        window.set_visible(visible);
-                    }
-                    "x" => {
-                        let is_maximized = window.is_maximized();
-                        window.set_maximized(!is_maximized);
-                    }
-                    _ => (),
-                },
-                WindowEvent::CloseRequested if window_id == window.id() => control_flow.set_exit(),
-                WindowEvent::RedrawRequested => {
-                    fill::fill_window(&window);
+                }
+                VirtualKeyCode::M => {
+                    minimized = !minimized;
+                    window.set_minimized(minimized);
+                }
+                VirtualKeyCode::Q => {
+                    control_flow.set_exit();
+                }
+                VirtualKeyCode::V => {
+                    visible = !visible;
+                    window.set_visible(visible);
+                }
+                VirtualKeyCode::X => {
+                    let is_maximized = window.is_maximized();
+                    window.set_maximized(!is_maximized);
                 }
                 _ => (),
             },
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == window.id() => control_flow.set_exit(),
             _ => (),
         }
-    })
+    });
 }

@@ -7,12 +7,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("A fantastic window!")
@@ -24,8 +21,8 @@ fn main() -> Result<(), impl std::error::Error> {
 
         control_flow.set_wait();
 
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
+        match event {
+            Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::MouseInput {
                     state: ElementState::Released,
@@ -33,12 +30,12 @@ fn main() -> Result<(), impl std::error::Error> {
                 } => {
                     window.request_redraw();
                 }
-                WindowEvent::RedrawRequested => {
-                    println!("\nredrawing!\n");
-                    fill::fill_window(&window);
-                }
                 _ => (),
+            },
+            Event::RedrawRequested(_) => {
+                println!("\nredrawing!\n");
             }
+            _ => (),
         }
-    })
+    });
 }

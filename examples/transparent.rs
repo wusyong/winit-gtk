@@ -7,12 +7,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_decorations(false)
@@ -26,14 +23,12 @@ fn main() -> Result<(), impl std::error::Error> {
         control_flow.set_wait();
         println!("{event:?}");
 
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::RedrawRequested => {
-                    fill::fill_window(&window);
-                }
-                _ => (),
-            }
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => control_flow.set_exit(),
+            _ => (),
         }
-    })
+    });
 }

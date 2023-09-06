@@ -11,23 +11,17 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[cfg(target_os = "macos")]
-#[path = "util/fill.rs"]
-mod fill;
-
 /// Prints the keyboard events characters received when option_is_alt is true versus false.
 /// A left mouse click will toggle option_is_alt.
 #[cfg(target_os = "macos")]
-fn main() -> Result<(), impl std::error::Error> {
-    let event_loop = EventLoop::new().unwrap();
+fn main() {
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("A fantastic window!")
         .with_inner_size(winit::dpi::LogicalSize::new(128.0, 128.0))
         .build(&event_loop)
         .unwrap();
-
-    window.set_ime_allowed(true);
 
     let mut option_as_alt = window.option_as_alt();
 
@@ -55,19 +49,16 @@ fn main() -> Result<(), impl std::error::Error> {
                     println!("Received Mouse click, toggling option_as_alt to: {option_as_alt:?}");
                     window.set_option_as_alt(option_as_alt);
                 }
+                WindowEvent::ReceivedCharacter(c) => println!("ReceivedCharacter: {c:?}"),
                 WindowEvent::KeyboardInput { .. } => println!("KeyboardInput: {event:?}"),
-                WindowEvent::RedrawRequested => {
-                    fill::fill_window(&window);
-                }
                 _ => (),
             },
-            Event::AboutToWait => {
+            Event::MainEventsCleared => {
                 window.request_redraw();
             }
-
             _ => (),
         }
-    })
+    });
 }
 
 #[cfg(not(target_os = "macos"))]

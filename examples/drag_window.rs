@@ -2,18 +2,16 @@
 
 use simple_logger::SimpleLogger;
 use winit::{
-    event::{ElementState, Event, KeyEvent, MouseButton, StartCause, WindowEvent},
+    event::{
+        ElementState, Event, KeyboardInput, MouseButton, StartCause, VirtualKeyCode, WindowEvent,
+    },
     event_loop::EventLoop,
-    keyboard::Key,
     window::{Window, WindowBuilder, WindowId},
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window_1 = WindowBuilder::new().build(&event_loop).unwrap();
     let window_2 = WindowBuilder::new().build(&event_loop).unwrap();
@@ -47,30 +45,22 @@ fn main() -> Result<(), impl std::error::Error> {
                 name_windows(entered_id, switched, &window_1, &window_2)
             }
             WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
+                input:
+                    KeyboardInput {
                         state: ElementState::Released,
-                        logical_key: Key::Character(c),
+                        virtual_keycode: Some(VirtualKeyCode::X),
                         ..
                     },
                 ..
-            } if c == "x" => {
+            } => {
                 switched = !switched;
                 name_windows(entered_id, switched, &window_1, &window_2);
                 println!("Switched!")
             }
-            WindowEvent::RedrawRequested => {
-                if window_id == window_1.id() {
-                    fill::fill_window(&window_1);
-                } else if window_id == window_2.id() {
-                    fill::fill_window(&window_2);
-                }
-            }
             _ => (),
         },
-
         _ => (),
-    })
+    });
 }
 
 fn name_windows(window_id: WindowId, switched: bool, window_1: &Window, window_2: &Window) {

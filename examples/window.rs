@@ -7,12 +7,9 @@ use winit::{
     window::WindowBuilder,
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("A fantastic window!")
@@ -25,20 +22,14 @@ fn main() -> Result<(), impl std::error::Error> {
         println!("{event:?}");
 
         match event {
-            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::RedrawRequested => {
-                    // Notify the windowing system that we'll be presenting to the window.
-                    window.pre_present_notify();
-                    fill::fill_window(&window);
-                }
-                _ => (),
-            },
-            Event::AboutToWait => {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == window.id() => control_flow.set_exit(),
+            Event::MainEventsCleared => {
                 window.request_redraw();
             }
-
             _ => (),
         }
-    })
+    });
 }

@@ -15,6 +15,7 @@ mod monitor;
 mod window;
 
 pub use eventloop::{EventLoop, EventLoopProxy, EventLoopWindowTarget};
+use gdk_pixbuf::{Colorspace, Pixbuf};
 pub use monitor::{MonitorHandle, VideoMode};
 pub use window::Window;
 
@@ -47,11 +48,27 @@ impl ApplicationName {
 #[derive(Clone)]
 pub struct PlatformSpecificWindowBuilderAttributes {
     pub name: Option<ApplicationName>,
+    pub skip_taskbar: bool,
+    pub auto_transparent: bool,
+    pub double_buffered: bool,
+    pub app_paintable: bool,
+    pub rgba_visual: bool,
+    pub cursor_moved: bool,
+    pub default_vbox: bool,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
     fn default() -> Self {
-        Self { name: None }
+        Self {
+            name: None,
+            skip_taskbar: Default::default(),
+            auto_transparent: true,
+            double_buffered: true,
+            app_paintable: false,
+            rgba_visual: false,
+            cursor_moved: true,
+            default_vbox: true,
+        }
     }
 }
 
@@ -68,8 +85,25 @@ impl fmt::Display for OsError {
     }
 }
 
+impl From<PlatformIcon> for Pixbuf {
+    fn from(icon: PlatformIcon) -> Self {
+        let height = icon.height as i32;
+        let width = icon.width as i32;
+        let row_stride = Pixbuf::calculate_rowstride(Colorspace::Rgb, true, 8, width, height);
+        Pixbuf::from_mut_slice(
+            icon.rgba,
+            gdk_pixbuf::Colorspace::Rgb,
+            true,
+            8,
+            width,
+            height,
+            row_stride,
+        )
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WindowId(u64);
+pub struct WindowId(pub u64);
 
 impl From<WindowId> for u64 {
     fn from(window_id: WindowId) -> Self {

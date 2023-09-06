@@ -1,21 +1,13 @@
 #![allow(clippy::single_match)]
 
-use std::thread;
-#[cfg(not(wasm_platform))]
-use std::time;
-#[cfg(wasm_platform)]
-use web_time as time;
+use std::{thread, time};
 
 use simple_logger::SimpleLogger;
 use winit::{
-    event::{ElementState, Event, KeyEvent, WindowEvent},
+    event::{Event, KeyboardInput, WindowEvent},
     event_loop::EventLoop,
-    keyboard::Key,
     window::WindowBuilder,
 };
-
-#[path = "util/fill.rs"]
-mod fill;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -27,7 +19,7 @@ enum Mode {
 const WAIT_TIME: time::Duration = time::Duration::from_millis(100);
 const POLL_SLEEP_TIME: time::Duration = time::Duration::from_millis(100);
 
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
 
     println!("Press '1' to switch to Wait mode.");
@@ -36,7 +28,7 @@ fn main() -> Result<(), impl std::error::Error> {
     println!("Press 'R' to toggle request_redraw() calls.");
     println!("Press 'Esc' to close the window.");
 
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Press 1, 2, 3 to change control flow mode. Press R to toggle redraw requests.")
         .build(&event_loop)
@@ -48,7 +40,7 @@ fn main() -> Result<(), impl std::error::Error> {
     let mut close_requested = false;
 
     event_loop.run(move |event, _, control_flow| {
-        use winit::event::StartCause;
+        use winit::event::{ElementState, StartCause, VirtualKeyCode};
         println!("{event:?}");
         match event {
             Event::NewEvents(start_cause) => {
@@ -62,52 +54,52 @@ fn main() -> Result<(), impl std::error::Error> {
                     close_requested = true;
                 }
                 WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            logical_key: key,
+                    input:
+                        KeyboardInput {
+                            virtual_keycode: Some(virtual_code),
                             state: ElementState::Pressed,
                             ..
                         },
                     ..
-                } => match key.as_ref() {
-                    // WARNING: Consider using `key_without_modifers()` if available on your platform.
-                    // See the `key_binding` example
-                    Key::Character("1") => {
+                } => match virtual_code {
+                    VirtualKeyCode::Key1 => {
                         mode = Mode::Wait;
                         println!("\nmode: {mode:?}\n");
                     }
-                    Key::Character("2") => {
+                    VirtualKeyCode::Key2 => {
                         mode = Mode::WaitUntil;
                         println!("\nmode: {mode:?}\n");
                     }
-                    Key::Character("3") => {
+                    VirtualKeyCode::Key3 => {
                         mode = Mode::Poll;
                         println!("\nmode: {mode:?}\n");
                     }
-                    Key::Character("r") => {
+                    VirtualKeyCode::R => {
                         request_redraw = !request_redraw;
                         println!("\nrequest_redraw: {request_redraw}\n");
                     }
-                    Key::Escape => {
+                    VirtualKeyCode::Escape => {
                         close_requested = true;
                     }
                     _ => (),
                 },
-                WindowEvent::RedrawRequested => {
-                    fill::fill_window(&window);
-                }
                 _ => (),
             },
-            Event::AboutToWait => {
+            Event::MainEventsCleared => {
                 if request_redraw && !wait_cancelled && !close_requested {
                     window.request_redraw();
                 }
-
+                if close_requested {
+                    control_flow.set_exit();
+                }
+            }
+            Event::RedrawRequested(_window_id) => {}
+            Event::RedrawEventsCleared => {
                 match mode {
                     Mode::Wait => control_flow.set_wait(),
                     Mode::WaitUntil => {
                         if !wait_cancelled {
-                            control_flow.set_wait_until(time::Instant::now() + WAIT_TIME);
+                            control_flow.set_wait_until(instant::Instant::now() + WAIT_TIME);
                         }
                     }
                     Mode::Poll => {
@@ -115,12 +107,8 @@ fn main() -> Result<(), impl std::error::Error> {
                         control_flow.set_poll();
                     }
                 };
-
-                if close_requested {
-                    control_flow.set_exit();
-                }
             }
             _ => (),
         }
-    })
+    });
 }

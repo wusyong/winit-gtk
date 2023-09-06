@@ -2,18 +2,14 @@
 
 use simple_logger::SimpleLogger;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, WindowEvent},
     event_loop::EventLoop,
-    keyboard::{Key, ModifiersState},
     window::{CursorGrabMode, WindowBuilder},
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("Super Cursor Grab'n'Hide Simulator 9000")
@@ -29,29 +25,27 @@ fn main() -> Result<(), impl std::error::Error> {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::CloseRequested => control_flow.set_exit(),
                 WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            logical_key: key,
+                    input:
+                        KeyboardInput {
                             state: ElementState::Released,
+                            virtual_keycode: Some(key),
                             ..
                         },
                     ..
                 } => {
+                    use winit::event::VirtualKeyCode::*;
                     let result = match key {
-                        Key::Escape => {
+                        Escape => {
                             control_flow.set_exit();
                             Ok(())
                         }
-                        Key::Character(ch) => match ch.to_lowercase().as_str() {
-                            "g" => window.set_cursor_grab(CursorGrabMode::Confined),
-                            "l" => window.set_cursor_grab(CursorGrabMode::Locked),
-                            "a" => window.set_cursor_grab(CursorGrabMode::None),
-                            "h" => {
-                                window.set_cursor_visible(modifiers.shift_key());
-                                Ok(())
-                            }
-                            _ => Ok(()),
-                        },
+                        G => window.set_cursor_grab(CursorGrabMode::Confined),
+                        L => window.set_cursor_grab(CursorGrabMode::Locked),
+                        A => window.set_cursor_grab(CursorGrabMode::None),
+                        H => {
+                            window.set_cursor_visible(modifiers.shift());
+                            Ok(())
+                        }
                         _ => Ok(()),
                     };
 
@@ -59,8 +53,7 @@ fn main() -> Result<(), impl std::error::Error> {
                         println!("error: {err}");
                     }
                 }
-                WindowEvent::ModifiersChanged(new) => modifiers = new.state(),
-                WindowEvent::RedrawRequested => fill::fill_window(&window),
+                WindowEvent::ModifiersChanged(m) => modifiers = m,
                 _ => (),
             },
             Event::DeviceEvent { event, .. } => match event {
@@ -73,5 +66,5 @@ fn main() -> Result<(), impl std::error::Error> {
             },
             _ => (),
         }
-    })
+    });
 }

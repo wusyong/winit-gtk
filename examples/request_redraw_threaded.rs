@@ -1,8 +1,8 @@
 #![allow(clippy::single_match)]
 
 #[cfg(not(wasm_platform))]
-fn main() -> Result<(), impl std::error::Error> {
-    use std::{sync::Arc, thread, time};
+fn main() {
+    use std::{thread, time};
 
     use simple_logger::SimpleLogger;
     use winit::{
@@ -11,26 +11,17 @@ fn main() -> Result<(), impl std::error::Error> {
         window::WindowBuilder,
     };
 
-    #[path = "util/fill.rs"]
-    mod fill;
-
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
-    let window = {
-        let window = WindowBuilder::new()
-            .with_title("A fantastic window!")
-            .build(&event_loop)
-            .unwrap();
-        Arc::new(window)
-    };
+    let window = WindowBuilder::new()
+        .with_title("A fantastic window!")
+        .build(&event_loop)
+        .unwrap();
 
-    thread::spawn({
-        let window = window.clone();
-        move || loop {
-            thread::sleep(time::Duration::from_secs(1));
-            window.request_redraw();
-        }
+    thread::spawn(move || loop {
+        thread::sleep(time::Duration::from_secs(1));
+        window.request_redraw();
     });
 
     event_loop.run(move |event, _, control_flow| {
@@ -43,16 +34,12 @@ fn main() -> Result<(), impl std::error::Error> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => control_flow.set_exit(),
-            Event::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } => {
+            Event::RedrawRequested(_) => {
                 println!("\nredrawing!\n");
-                fill::fill_window(&window);
             }
             _ => (),
         }
-    })
+    });
 }
 
 #[cfg(wasm_platform)]

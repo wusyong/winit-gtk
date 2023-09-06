@@ -4,15 +4,12 @@ use std::path::Path;
 
 use simple_logger::SimpleLogger;
 use winit::{
-    event::{Event, WindowEvent},
+    event::Event,
     event_loop::EventLoop,
     window::{Icon, WindowBuilder},
 };
 
-#[path = "util/fill.rs"]
-mod fill;
-
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     SimpleLogger::new().init().unwrap();
 
     // You'll have to choose an icon size at your own discretion. On X11, the desired size varies
@@ -23,7 +20,7 @@ fn main() -> Result<(), impl std::error::Error> {
 
     let icon = load_icon(Path::new(path));
 
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("An iconic window!")
@@ -37,16 +34,16 @@ fn main() -> Result<(), impl std::error::Error> {
         control_flow.set_wait();
 
         if let Event::WindowEvent { event, .. } = event {
+            use winit::event::WindowEvent::*;
             match event {
-                WindowEvent::CloseRequested => control_flow.set_exit(),
-                WindowEvent::DroppedFile(path) => {
+                CloseRequested => control_flow.set_exit(),
+                DroppedFile(path) => {
                     window.set_window_icon(Some(load_icon(&path)));
                 }
-                WindowEvent::RedrawRequested => fill::fill_window(&window),
                 _ => (),
             }
         }
-    })
+    });
 }
 
 fn load_icon(path: &Path) -> Icon {

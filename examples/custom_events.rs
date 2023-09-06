@@ -1,7 +1,7 @@
 #![allow(clippy::single_match)]
 
 #[cfg(not(wasm_platform))]
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     use simple_logger::SimpleLogger;
     use winit::{
         event::{Event, WindowEvent},
@@ -9,20 +9,15 @@ fn main() -> Result<(), impl std::error::Error> {
         window::WindowBuilder,
     };
 
-    #[path = "util/fill.rs"]
-    mod fill;
-
     #[derive(Debug, Clone, Copy)]
     enum CustomEvent {
         Timer,
     }
 
     SimpleLogger::new().init().unwrap();
-    let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event()
-        .build()
-        .unwrap();
+    let event_loop = EventLoopBuilder::<CustomEvent>::with_user_event().build();
 
-    let window = WindowBuilder::new()
+    let _window = WindowBuilder::new()
         .with_title("A fantastic window!")
         .build(&event_loop)
         .unwrap();
@@ -49,15 +44,9 @@ fn main() -> Result<(), impl std::error::Error> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => control_flow.set_exit(),
-            Event::WindowEvent {
-                event: WindowEvent::RedrawRequested,
-                ..
-            } => {
-                fill::fill_window(&window);
-            }
             _ => (),
         }
-    })
+    });
 }
 
 #[cfg(wasm_platform)]

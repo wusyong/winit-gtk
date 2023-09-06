@@ -1,16 +1,12 @@
 #[cfg(any(x11_platform, macos_platform, windows_platform))]
-#[path = "util/fill.rs"]
-mod fill;
-
-#[cfg(any(x11_platform, macos_platform, windows_platform))]
-fn main() -> Result<(), impl std::error::Error> {
+fn main() {
     use std::collections::HashMap;
 
+    use raw_window_handle::HasRawWindowHandle;
     use winit::{
         dpi::{LogicalPosition, LogicalSize, Position},
-        event::{ElementState, Event, KeyEvent, WindowEvent},
+        event::{ElementState, Event, KeyboardInput, WindowEvent},
         event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
-        window::raw_window_handle::HasRawWindowHandle,
         window::{Window, WindowBuilder, WindowId},
     };
 
@@ -36,7 +32,7 @@ fn main() -> Result<(), impl std::error::Error> {
 
     let mut windows = HashMap::new();
 
-    let event_loop: EventLoop<()> = EventLoop::new().unwrap();
+    let event_loop: EventLoop<()> = EventLoop::new();
     let parent_window = WindowBuilder::new()
         .with_title("parent window")
         .with_position(Position::Logical(LogicalPosition::new(0.0, 0.0)))
@@ -46,7 +42,7 @@ fn main() -> Result<(), impl std::error::Error> {
 
     println!("parent window: {parent_window:?})");
 
-    event_loop.run(move |event: Event<()>, event_loop, control_flow| {
+    event_loop.run(move |event: Event<'_, ()>, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         if let Event::WindowEvent { event, window_id } = event {
@@ -63,19 +59,14 @@ fn main() -> Result<(), impl std::error::Error> {
                     println!("cursor entered in the window {window_id:?}");
                 }
                 WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
+                    input:
+                        KeyboardInput {
                             state: ElementState::Pressed,
                             ..
                         },
                     ..
                 } => {
                     spawn_child_window(&parent_window, event_loop, &mut windows);
-                }
-                WindowEvent::RedrawRequested => {
-                    if let Some(window) = windows.get(&window_id) {
-                        fill::fill_window(window);
-                    }
                 }
                 _ => (),
             }
