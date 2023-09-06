@@ -1,6 +1,6 @@
-use icrate::Foundation::NSObject;
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::NSObject;
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 extern_class!(
     /// An object that stores color data and sometimes opacity (alpha value).
@@ -11,7 +11,6 @@ extern_class!(
 
     unsafe impl ClassType for NSColor {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
@@ -22,7 +21,8 @@ unsafe impl Sync for NSColor {}
 
 extern_methods!(
     unsafe impl NSColor {
-        #[method_id(clearColor)]
-        pub fn clear() -> Id<Self>;
+        pub fn clear() -> Id<Self, Shared> {
+            unsafe { msg_send_id![Self::class(), clearColor] }
+        }
     }
 );

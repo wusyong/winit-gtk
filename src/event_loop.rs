@@ -9,16 +9,12 @@
 //! handle events.
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::{error, fmt};
 
+use instant::{Duration, Instant};
+use once_cell::sync::OnceCell;
 use raw_window_handle::{HasRawDisplayHandle, RawDisplayHandle};
-#[cfg(not(wasm_platform))]
-use std::time::{Duration, Instant};
-#[cfg(wasm_platform)]
-use web_time::{Duration, Instant};
 
-use crate::error::EventLoopError;
 use crate::{event::Event, monitor::MonitorHandle, platform_impl};
 
 /// Provides a way to retrieve events from the system and from the windows that were registered to
@@ -70,8 +66,6 @@ impl EventLoopBuilder<()> {
     }
 }
 
-static EVENT_LOOP_CREATED: AtomicBool = AtomicBool::new(false);
-
 impl<T> EventLoopBuilder<T> {
     /// Start building a new event loop, with the given type as the user event
     /// type.
@@ -88,23 +82,23 @@ impl<T> EventLoopBuilder<T> {
     /// ***For cross-platform compatibility, the [`EventLoop`] must be created on the main thread,
     /// and only once per application.***
     ///
+    /// Attempting to create the event loop on a different thread, or multiple event loops in
+    /// the same application, will panic. This restriction isn't
+    /// strictly necessary on all platforms, but is imposed to eliminate any nasty surprises when
+    /// porting to platforms that require it. `EventLoopBuilderExt::any_thread` functions are exposed
+    /// in the relevant [`platform`] module if the target platform supports creating an event loop on
+    /// any thread.
+    ///
     /// Calling this function will result in display backend initialisation.
-    ///
-    /// ## Panics
-    ///
-    /// Attempting to create the event loop off the main thread will panic. This
-    /// restriction isn't strictly necessary on all platforms, but is imposed to
-    /// eliminate any nasty surprises when porting to platforms that require it.
-    /// `EventLoopBuilderExt::any_thread` functions are exposed in the relevant
-    /// [`platform`] module if the target platform supports creating an event
-    /// loop on any thread.
     ///
     /// ## Platform-specific
     ///
-    /// - **Wayland/X11:** to prevent running under `Wayland` or `X11` unset `WAYLAND_DISPLAY`
-    ///                    or `DISPLAY` respectively when building the event loop.
-    /// - **Android:** must be configured with an `AndroidApp` from `android_main()` by calling
-    ///     [`.with_android_app(app)`] before calling `.build()`, otherwise it'll panic.
+    /// - **Linux:** Backend type can be controlled using an environment variable
+    ///   `WINIT_UNIX_BACKEND`. Legal values are `x11` and `wayland`.
+    ///   If it is not set, winit will try to connect to a Wayland connection, and if that fails,
+    ///   will fall back on X11. If this variable is set with any other value, winit will panic.
+    /// - **Android:** Must be configured with an `AndroidApp` from `android_main()` by calling
+    ///     [`.with_android_app(app)`] before calling `.build()`.
     ///
     /// [`platform`]: crate::platform
     #[cfg_attr(
@@ -116,22 +110,17 @@ impl<T> EventLoopBuilder<T> {
         doc = "[`.with_android_app(app)`]: #only-available-on-android"
     )]
     #[inline]
-    pub fn build(&mut self) -> Result<EventLoop<T>, EventLoopError> {
-        if EVENT_LOOP_CREATED.swap(true, Ordering::Relaxed) {
-            return Err(EventLoopError::RecreationAttempt);
+    pub fn build(&mut self) -> EventLoop<T> {
+        static EVENT_LOOP_CREATED: OnceCell<()> = OnceCell::new();
+        if EVENT_LOOP_CREATED.set(()).is_err() {
+            panic!("Creating EventLoop multiple times is not supported.");
         }
-
         // Certain platforms accept a mutable reference in their API.
         #[allow(clippy::unnecessary_mut_passed)]
-        Ok(EventLoop {
-            event_loop: platform_impl::EventLoop::new(&mut self.platform_specific)?,
+        EventLoop {
+            event_loop: platform_impl::EventLoop::new(&mut self.platform_specific),
             _marker: PhantomData,
-        })
-    }
-
-    #[cfg(wasm_platform)]
-    pub(crate) fn allow_event_loop_recreation() {
-        EVENT_LOOP_CREATED.store(false, Ordering::Relaxed);
+        }
     }
 }
 
@@ -149,7 +138,7 @@ impl<T> fmt::Debug for EventLoopWindowTarget<T> {
 
 /// Set by the user callback given to the [`EventLoop::run`] method.
 ///
-/// Indicates the desired behavior of the event loop after [`Event::AboutToWait`] is emitted.
+/// Indicates the desired behavior of the event loop after [`Event::RedrawEventsCleared`] is emitted.
 ///
 /// Defaults to [`Poll`].
 ///
@@ -157,7 +146,7 @@ impl<T> fmt::Debug for EventLoopWindowTarget<T> {
 ///
 /// Almost every change is persistent between multiple calls to the event loop closure within a
 /// given run loop. The only exception to this is [`ExitWithCode`] which, once set, cannot be unset.
-/// Changes are **not** persistent between multiple calls to `run_ondemand` - issuing a new call will
+/// Changes are **not** persistent between multiple calls to `run_return` - issuing a new call will
 /// reset the control flow to [`Poll`].
 ///
 /// [`ExitWithCode`]: Self::ExitWithCode
@@ -166,6 +155,13 @@ impl<T> fmt::Debug for EventLoopWindowTarget<T> {
 pub enum ControlFlow {
     /// When the current loop iteration finishes, immediately begin a new iteration regardless of
     /// whether or not new events are available to process.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **Web:** Events are queued and usually sent when `requestAnimationFrame` fires but sometimes
+    ///   the events in the queue may be sent before the next `requestAnimationFrame` callback, for
+    ///   example when the scaling of the page has changed. This should be treated as an implementation
+    ///   detail which should not be relied on.
     Poll,
 
     /// When the current loop iteration finishes, suspend the thread until another event arrives.
@@ -181,7 +177,7 @@ pub enum ControlFlow {
     /// [`Poll`]: Self::Poll
     WaitUntil(Instant),
 
-    /// Send a [`LoopExiting`] event and stop the event loop. This variant is *sticky* - once set,
+    /// Send a [`LoopDestroyed`] event and stop the event loop. This variant is *sticky* - once set,
     /// `control_flow` cannot be changed from `ExitWithCode`, and any future attempts to do so will
     /// result in the `control_flow` parameter being reset to `ExitWithCode`.
     ///
@@ -190,12 +186,12 @@ pub enum ControlFlow {
     ///
     /// ## Platform-specific
     ///
-    /// - **Android / iOS / Web:** The supplied exit code is unused.
+    /// - **Android / iOS / WASM:** The supplied exit code is unused.
     /// - **Unix:** On most Unix-like platforms, only the 8 least significant bits will be used,
     ///   which can cause surprises with negative exit values (`-42` would end up as `214`). See
     ///   [`std::process::exit`].
     ///
-    /// [`LoopExiting`]: Event::LoopExiting
+    /// [`LoopDestroyed`]: Event::LoopDestroyed
     /// [`Exit`]: ControlFlow::Exit
     ExitWithCode(i32),
 }
@@ -269,49 +265,42 @@ impl EventLoop<()> {
     ///
     /// [`EventLoopBuilder::new().build()`]: EventLoopBuilder::build
     #[inline]
-    pub fn new() -> Result<EventLoop<()>, EventLoopError> {
+    pub fn new() -> EventLoop<()> {
         EventLoopBuilder::new().build()
+    }
+}
+
+impl Default for EventLoop<()> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl<T> EventLoop<T> {
     #[deprecated = "Use `EventLoopBuilder::<T>::with_user_event().build()` instead."]
-    pub fn with_user_event() -> Result<EventLoop<T>, EventLoopError> {
+    pub fn with_user_event() -> EventLoop<T> {
         EventLoopBuilder::<T>::with_user_event().build()
     }
 
-    /// Runs the event loop in the calling thread and calls the given `event_handler` closure
-    /// to dispatch any pending events.
-    ///
-    /// Since the closure is `'static`, it must be a `move` closure if it needs to
+    /// Hijacks the calling thread and initializes the winit event loop with the provided
+    /// closure. Since the closure is `'static`, it must be a `move` closure if it needs to
     /// access any data from the calling context.
     ///
     /// See the [`ControlFlow`] docs for information on how changes to `&mut ControlFlow` impact the
     /// event loop's behavior.
     ///
+    /// Any values not passed to this function will *not* be dropped.
+    ///
     /// ## Platform-specific
     ///
     /// - **X11 / Wayland:** The program terminates with exit code 1 if the display server
     ///   disconnects.
-    /// - **iOS:** Will never return to the caller and so values not passed to this function will
-    ///   *not* be dropped before the process exits.
-    /// - **Web:** Will _act_ as if it never returns to the caller by throwing a Javascript exception
-    ///   (that Rust doesn't see) that will also mean that the rest of the function is never executed
-    ///   and any values not passed to this function will *not* be dropped.
-    ///
-    ///   Web applications are recommended to use `spawn()` instead of `run()` to avoid the need
-    ///   for the Javascript exception trick, and to make it clearer that the event loop runs
-    ///   asynchronously (via the browser's own, internal, event loop) and doesn't block the
-    ///   current thread of execution like it does on other platforms.
-    ///
-    ///   This function won't be available with `target_feature = "exception-handling"`.
     ///
     /// [`ControlFlow`]: crate::event_loop::ControlFlow
     #[inline]
-    #[cfg(not(all(wasm_platform, target_feature = "exception-handling")))]
-    pub fn run<F>(self, event_handler: F) -> Result<(), EventLoopError>
+    pub fn run<F>(self, event_handler: F) -> !
     where
-        F: FnMut(Event<T>, &EventLoopWindowTarget<T>, &mut ControlFlow),
+        F: 'static + FnMut(Event<'_, T>, &EventLoopWindowTarget<T>, &mut ControlFlow),
     {
         self.event_loop.run(event_handler)
     }
@@ -342,7 +331,6 @@ impl<T> EventLoopWindowTarget<T> {
     /// Returns the list of all the monitors available on the system.
     #[inline]
     pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
-        #[allow(clippy::useless_conversion)] // false positive on some platforms
         self.p
             .available_monitors()
             .into_iter()
@@ -355,7 +343,7 @@ impl<T> EventLoopWindowTarget<T> {
     ///
     /// ## Platform-specific
     ///
-    /// **Wayland / Web:** Always returns `None`.
+    /// **Wayland:** Always returns `None`.
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         self.p
@@ -363,19 +351,20 @@ impl<T> EventLoopWindowTarget<T> {
             .map(|inner| MonitorHandle { inner })
     }
 
-    /// Change if or when [`DeviceEvent`]s are captured.
+    /// Change [`DeviceEvent`] filter mode.
     ///
     /// Since the [`DeviceEvent`] capture can lead to high CPU usage for unfocused windows, winit
     /// will ignore them by default for unfocused windows on Linux/BSD. This method allows changing
-    /// this at runtime to explicitly capture them again.
+    /// this filter at runtime to explicitly capture them again.
     ///
     /// ## Platform-specific
     ///
-    /// - **Wayland / macOS / iOS / Android / Orbital:** Unsupported.
+    /// - **Wayland / macOS / iOS / Android / Web / Orbital:** Unsupported.
     ///
     /// [`DeviceEvent`]: crate::event::DeviceEvent
-    pub fn listen_device_events(&self, allowed: DeviceEvents) {
-        self.p.listen_device_events(allowed);
+    pub fn set_device_event_filter(&self, _filter: DeviceEventFilter) {
+        #[cfg(any(x11_platform, wayland_platform, windows))]
+        self.p.set_device_event_filter(_filter);
     }
 }
 
@@ -433,40 +422,19 @@ impl<T> fmt::Display for EventLoopClosed<T> {
 
 impl<T: fmt::Debug> error::Error for EventLoopClosed<T> {}
 
-/// Control when device events are captured.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
-pub enum DeviceEvents {
-    /// Report device events regardless of window focus.
+/// Filter controlling the propagation of device events.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum DeviceEventFilter {
+    /// Always filter out device events.
     Always,
-    /// Only capture device events while the window is focused.
-    #[default]
-    WhenFocused,
-    /// Never capture device events.
+    /// Filter out device events while the window is not focused.
+    Unfocused,
+    /// Report all device events regardless of window focus.
     Never,
 }
 
-/// A unique identifier of the winit's async request.
-///
-/// This could be used to identify the async request once it's done
-/// and a specific action must be taken.
-///
-/// One of the handling scenarious could be to maintain a working list
-/// containing [`AsyncRequestSerial`] and some closure associated with it.
-/// Then once event is arriving the working list is being traversed and a job
-/// executed and removed from the list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AsyncRequestSerial {
-    serial: u64,
-}
-
-impl AsyncRequestSerial {
-    // TODO(kchibisov) remove `cfg` when the clipboard will be added.
-    #[allow(dead_code)]
-    pub(crate) fn get() -> Self {
-        static CURRENT_SERIAL: AtomicU64 = AtomicU64::new(0);
-        // NOTE: we rely on wrap around here, while the user may just request
-        // in the loop u64::MAX times that's issue is considered on them.
-        let serial = CURRENT_SERIAL.fetch_add(1, Ordering::Relaxed);
-        Self { serial }
+impl Default for DeviceEventFilter {
+    fn default() -> Self {
+        Self::Unfocused
     }
 }

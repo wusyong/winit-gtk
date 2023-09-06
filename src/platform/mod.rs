@@ -9,10 +9,9 @@
 //!  - `windows`
 //!  - `web`
 //!
-//! And the following platform-specific modules:
+//! And the following platform-specific module:
 //!
-//! - `run_ondemand` (available on `windows`, `unix`, `macos`, `android`)
-//! - `pump_events` (available on `windows`, `unix`, `macos`, `android`)
+//! - `run_return` (available on `windows`, `unix`, `macos`, and `android`)
 //!
 //! However only the module corresponding to the platform you're compiling to will be available.
 
@@ -24,8 +23,6 @@ pub mod ios;
 pub mod macos;
 #[cfg(orbital_platform)]
 pub mod orbital;
-// #[cfg(any(x11_platform, wayland_platform))]
-// pub mod startup_notify;
 // #[cfg(wayland_platform)]
 // pub mod wayland;
 #[cfg(wasm_platform)]
@@ -34,25 +31,13 @@ pub mod web;
 pub mod windows;
 // #[cfg(x11_platform)]
 // pub mod x11;
-// TODO Bring back these modules
 
-#[cfg(any(
-    windows_platform,
-    macos_platform,
-    android_platform,
-    x11_platform,
-    wayland_platform
-))]
-pub mod run_ondemand;
-
-#[cfg(any(
-    windows_platform,
-    macos_platform,
-    android_platform,
-    x11_platform,
-    wayland_platform
-))]
-pub mod pump_events;
-
-pub mod modifier_supplement;
-pub mod scancode;
+// #[cfg(any(
+//     windows_platform,
+//     macos_platform,
+//     android_platform,
+//     x11_platform,
+//     wayland_platform,
+//     orbital_platform
+// ))]
+// pub mod run_return;

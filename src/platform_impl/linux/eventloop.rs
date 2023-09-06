@@ -1,23 +1,20 @@
 use std::{
     cell::RefCell,
     collections::{HashSet, VecDeque},
-    process,
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
 };
 
 use crossbeam_channel::SendError;
 use gdk::prelude::{ApplicationExt, DisplayExtManual};
 use gio::Cancellable;
-use glib::{MainContext, Priority, ObjectType};
-use raw_window_handle::{WaylandDisplayHandle, RawDisplayHandle, XlibDisplayHandle};
+use glib::{MainContext, ObjectType, Priority};
+use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle, XlibDisplayHandle};
 
 use crate::{
-    error::EventLoopError,
     event::{Event, StartCause},
-    event_loop::{ControlFlow, DeviceEvents, EventLoopClosed, EventLoopWindowTarget as RootELW},
-    platform::pump_events::PumpStatus,
+    event_loop::{
+        ControlFlow, DeviceEventFilter, EventLoopClosed, EventLoopWindowTarget as RootELW,
+    },
 };
 
 use super::{
@@ -28,9 +25,9 @@ pub struct EventLoop<T: 'static> {
     /// Window target.
     window_target: RootELW<T>,
     /// User event sender for EventLoopProxy
-    pub(crate) user_event_tx: crossbeam_channel::Sender<Event<T>>,
+    pub(crate) user_event_tx: crossbeam_channel::Sender<Event<'static, T>>,
     /// Event queue of EventLoop
-    events: crossbeam_channel::Receiver<Event<T>>,
+    events: crossbeam_channel::Receiver<Event<'static, T>>,
     /// Draw queue of EventLoop
     draws: crossbeam_channel::Receiver<WindowId>,
 }
@@ -38,7 +35,7 @@ pub struct EventLoop<T: 'static> {
 /// Used to send custom events to `EventLoop`.
 #[derive(Debug)]
 pub struct EventLoopProxy<T: 'static> {
-    user_event_tx: crossbeam_channel::Sender<Event<T>>,
+    user_event_tx: crossbeam_channel::Sender<Event<'static, T>>,
 }
 
 impl<T: 'static> Clone for EventLoopProxy<T> {
@@ -50,9 +47,7 @@ impl<T: 'static> Clone for EventLoopProxy<T> {
 }
 
 impl<T: 'static> EventLoop<T> {
-    pub(crate) fn new(
-        attributes: &PlatformSpecificEventLoopAttributes,
-    ) -> Result<Self, EventLoopError> {
+    pub(crate) fn new(attributes: &PlatformSpecificEventLoopAttributes) -> Self {
         let context = MainContext::default();
         let app = gtk::Application::new(None, gio::ApplicationFlags::empty());
         let app_ = app.clone();
@@ -101,7 +96,7 @@ impl<T: 'static> EventLoop<T> {
             draws: draw_rx,
         };
 
-        Ok(event_loop)
+        event_loop
     }
     /// Creates an `EventLoopProxy` that can be used to dispatch user events to the main event loop.
     pub fn create_proxy(&self) -> EventLoopProxy<T> {
@@ -110,23 +105,9 @@ impl<T: 'static> EventLoop<T> {
         }
     }
 
-    pub fn run<F>(mut self, callback: F) -> Result<(), EventLoopError>
+    pub fn run<F>(mut self, callback: F) -> !
     where
-        F: FnMut(crate::event::Event<T>, &RootELW<T>, &mut ControlFlow),
-    {
-        self.run_ondemand(callback)
-    }
-
-    pub fn run_ondemand<F>(&mut self, callback: F) -> Result<(), EventLoopError>
-    where
-        F: FnMut(crate::event::Event<T>, &RootELW<T>, &mut ControlFlow),
-    {
-        todo!()
-    }
-
-    pub fn pump_events<F>(&mut self, timeout: Option<Duration>, callback: F) -> PumpStatus
-    where
-        F: FnMut(crate::event::Event<T>, &RootELW<T>, &mut ControlFlow),
+        F: 'static + FnMut(crate::event::Event<'_, T>, &RootELW<T>, &mut ControlFlow),
     {
         todo!()
     }
@@ -199,7 +180,7 @@ impl<T> EventLoopWindowTarget<T> {
     }
 
     #[inline]
-    pub fn listen_device_events(&self, allowed: DeviceEvents) {
+    pub fn set_device_event_filter(&self, _filter: DeviceEventFilter) {
         todo!()
     }
 

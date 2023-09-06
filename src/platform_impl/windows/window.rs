@@ -6,15 +6,14 @@ use raw_window_handle::{
 use std::{
     cell::Cell,
     ffi::c_void,
-    io,
-    mem::{self, MaybeUninit},
-    panic, ptr,
+    io, mem, panic, ptr,
     sync::{mpsc::channel, Arc, Mutex, MutexGuard},
 };
 
 use windows_sys::Win32::{
     Foundation::{
-        HWND, LPARAM, OLE_E_WRONGCOMPOBJ, POINT, POINTS, RECT, RPC_E_CHANGED_MODE, S_OK, WPARAM,
+        HINSTANCE, HWND, LPARAM, OLE_E_WRONGCOMPOBJ, POINT, POINTS, RECT, RPC_E_CHANGED_MODE, S_OK,
+        WPARAM,
     },
     Graphics::{
         Dwm::{DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND},
@@ -33,9 +32,9 @@ use windows_sys::Win32::{
     UI::{
         Input::{
             KeyboardAndMouse::{
-                EnableWindow, GetActiveWindow, MapVirtualKeyW, ReleaseCapture, SendInput,
-                ToUnicode, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-                KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_LMENU, VK_MENU, VK_SPACE,
+                EnableWindow, GetActiveWindow, MapVirtualKeyW, ReleaseCapture, SendInput, INPUT,
+                INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
+                MAPVK_VK_TO_VSC, VK_LMENU, VK_MENU,
             },
             Touch::{RegisterTouchWindow, TWF_WANTPALM},
         },
@@ -45,8 +44,7 @@ use windows_sys::Win32::{
             IsWindowVisible, LoadCursorW, PeekMessageW, PostMessageW, RegisterClassExW, SetCursor,
             SetCursorPos, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowPlacement,
             SetWindowPos, SetWindowTextW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, FLASHWINFO,
-            FLASHW_ALL, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY, GWLP_HINSTANCE, HTBOTTOM,
-            HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+            FLASHW_ALL, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY, GWLP_HINSTANCE, HTCAPTION,
             NID_READY, PM_NOREMOVE, SM_DIGITIZER, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSIZE,
             SWP_NOZORDER, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WM_NCLBUTTONDOWN, WNDCLASSEXW,
         },
@@ -67,7 +65,6 @@ use crate::{
         event_loop::{self, EventLoopWindowTarget, DESTROY_MSG_ID},
         icon::{self, IconType},
         ime::ImeContext,
-        keyboard::KeyEventBuilder,
         monitor::{self, MonitorHandle},
         util,
         window_state::{CursorFlags, SavedWindow, WindowFlags, WindowState},
@@ -102,16 +99,6 @@ impl Window {
         //
         // done. you owe me -- ossi
         unsafe { init(w_attr, pl_attr, event_loop) }
-    }
-
-    pub(crate) fn maybe_queue_on_main(&self, f: impl FnOnce(&Self) + Send + 'static) {
-        // TODO: Use `thread_executor` here
-        f(self)
-    }
-
-    pub(crate) fn maybe_wait_on_main<R: Send>(&self, f: impl FnOnce(&Self) -> R + Send) -> R {
-        // TODO: Use `thread_executor` here
-        f(self)
     }
 
     fn window_state_lock(&self) -> MutexGuard<'_, WindowState> {
@@ -150,9 +137,6 @@ impl Window {
             RedrawWindow(self.hwnd(), ptr::null(), 0, RDW_INTERNALPAINT);
         }
     }
-
-    #[inline]
-    pub fn pre_present_notify(&self) {}
 
     #[inline]
     pub fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
@@ -223,25 +207,21 @@ impl Window {
     }
 
     #[inline]
-    pub fn request_inner_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+    pub fn set_inner_size(&self, size: Size) {
         let scale_factor = self.scale_factor();
         let physical_size = size.to_physical::<u32>(scale_factor);
 
+        let window_state = Arc::clone(&self.window_state);
+        let window = self.window.clone();
+        self.thread_executor.execute_in_thread(move || {
+            let _ = &window;
+            WindowState::set_window_flags(window_state.lock().unwrap(), window.0, |f| {
+                f.set(WindowFlags::MAXIMIZED, false)
+            });
+        });
+
         let window_flags = self.window_state_lock().window_flags;
         window_flags.set_size(self.hwnd(), physical_size);
-
-        if physical_size != self.inner_size() {
-            let window_state = Arc::clone(&self.window_state);
-            let window = self.window.clone();
-            self.thread_executor.execute_in_thread(move || {
-                let _ = &window;
-                WindowState::set_window_flags(window_state.lock().unwrap(), window.0, |f| {
-                    f.set(WindowFlags::MAXIMIZED, false)
-                });
-            });
-        }
-
-        None
     }
 
     #[inline]
@@ -249,7 +229,7 @@ impl Window {
         self.window_state_lock().min_size = size;
         // Make windows re-check the window size bounds.
         let size = self.inner_size();
-        self.request_inner_size(size.into());
+        self.set_inner_size(size.into());
     }
 
     #[inline]
@@ -257,7 +237,7 @@ impl Window {
         self.window_state_lock().max_size = size;
         // Make windows re-check the window size bounds.
         let size = self.inner_size();
-        self.request_inner_size(size.into());
+        self.set_inner_size(size.into());
     }
 
     #[inline]
@@ -332,11 +312,15 @@ impl Window {
     }
 
     #[inline]
+    pub fn hinstance(&self) -> HINSTANCE {
+        unsafe { super::get_window_long(self.hwnd(), GWLP_HINSTANCE) }
+    }
+
+    #[inline]
     pub fn raw_window_handle(&self) -> RawWindowHandle {
         let mut window_handle = Win32WindowHandle::empty();
         window_handle.hwnd = self.window.0 as *mut _;
-        let hinstance = unsafe { super::get_window_long(self.hwnd(), GWLP_HINSTANCE) };
-        window_handle.hinstance = hinstance as *mut _;
+        window_handle.hinstance = self.hinstance() as *mut _;
         RawWindowHandle::Win32(window_handle)
     }
 
@@ -349,7 +333,7 @@ impl Window {
     pub fn set_cursor_icon(&self, cursor: CursorIcon) {
         self.window_state_lock().mouse.cursor = cursor;
         self.thread_executor.execute_in_thread(move || unsafe {
-            let cursor = LoadCursorW(0, util::to_windows_cursor(cursor));
+            let cursor = LoadCursorW(0, cursor.to_windows_cursor());
             SetCursor(cursor);
         });
     }
@@ -422,53 +406,36 @@ impl Window {
         Ok(())
     }
 
-    unsafe fn handle_os_dragging(&self, wparam: WPARAM) {
-        let points = {
-            let mut pos = mem::zeroed();
-            GetCursorPos(&mut pos);
-            pos
-        };
-        let points = POINTS {
-            x: points.x as i16,
-            y: points.y as i16,
-        };
-        ReleaseCapture();
-
-        self.window_state_lock().dragging = true;
-
-        PostMessageW(
-            self.hwnd(),
-            WM_NCLBUTTONDOWN,
-            wparam,
-            &points as *const _ as LPARAM,
-        );
-    }
-
     #[inline]
     pub fn drag_window(&self) -> Result<(), ExternalError> {
         unsafe {
-            self.handle_os_dragging(HTCAPTION as WPARAM);
+            let points = {
+                let mut pos = mem::zeroed();
+                GetCursorPos(&mut pos);
+                pos
+            };
+            let points = POINTS {
+                x: points.x as i16,
+                y: points.y as i16,
+            };
+            ReleaseCapture();
+
+            self.window_state_lock().dragging = true;
+
+            PostMessageW(
+                self.hwnd(),
+                WM_NCLBUTTONDOWN,
+                HTCAPTION as WPARAM,
+                &points as *const _ as LPARAM,
+            );
         }
 
         Ok(())
     }
 
     #[inline]
-    pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
-        unsafe {
-            self.handle_os_dragging(match direction {
-                ResizeDirection::East => HTRIGHT,
-                ResizeDirection::North => HTTOP,
-                ResizeDirection::NorthEast => HTTOPRIGHT,
-                ResizeDirection::NorthWest => HTTOPLEFT,
-                ResizeDirection::South => HTBOTTOM,
-                ResizeDirection::SouthEast => HTBOTTOMRIGHT,
-                ResizeDirection::SouthWest => HTBOTTOMLEFT,
-                ResizeDirection::West => HTLEFT,
-            } as WPARAM);
-        }
-
-        Ok(())
+    pub fn drag_resize_window(&self, _direction: ResizeDirection) -> Result<(), ExternalError> {
+        Err(ExternalError::NotSupported(NotSupportedError::new()))
     }
 
     #[inline]
@@ -752,9 +719,9 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_ime_cursor_area(&self, spot: Position, size: Size) {
+    pub fn set_ime_position(&self, spot: Position) {
         unsafe {
-            ImeContext::current(self.hwnd()).set_ime_cursor_area(spot, size, self.scale_factor());
+            ImeContext::current(self.hwnd()).set_ime_position(spot, self.scale_factor());
         }
     }
 
@@ -865,26 +832,6 @@ impl Window {
                 },
             )
         };
-    }
-
-    #[inline]
-    pub fn reset_dead_keys(&self) {
-        // `ToUnicode` consumes the dead-key by default, so we are constructing a fake (but valid)
-        // key input which we can call `ToUnicode` with.
-        unsafe {
-            let vk = VK_SPACE as VIRTUAL_KEY;
-            let scancode = MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC);
-            let kbd_state = [0; 256];
-            let mut char_buff = [MaybeUninit::uninit(); 8];
-            ToUnicode(
-                vk as u32,
-                scancode,
-                kbd_state.as_ptr(),
-                char_buff[0].as_mut_ptr(),
-                char_buff.len() as i32,
-                0,
-            );
-        }
     }
 }
 
@@ -998,10 +945,11 @@ impl<'a, T: 'static> InitData<'a, T> {
             None
         };
 
+        self.event_loop.runner_shared.register_window(win.window.0);
+
         event_loop::WindowData {
             window_state: win.window_state.clone(),
             event_loop_runner: self.event_loop.runner_shared.clone(),
-            key_event_builder: KeyEventBuilder::default(),
             _file_drop_handler: file_drop_handler,
             userdata_removed: Cell::new(false),
             recurse_depth: Cell::new(0),
@@ -1079,11 +1027,11 @@ impl<'a, T: 'static> InitData<'a, T> {
                 .min_inner_size
                 .unwrap_or_else(|| PhysicalSize::new(0, 0).into());
             let clamped_size = Size::clamp(size, min_size, max_size, win.scale_factor());
-            win.request_inner_size(clamped_size);
+            win.set_inner_size(clamped_size);
 
             if attributes.maximized {
                 // Need to set MAXIMIZED after setting `inner_size` as
-                // `Window::request_inner_size` changes MAXIMIZED to false.
+                // `Window::set_inner_size` changes MAXIMIZED to false.
                 win.set_maximized(true);
             }
         }
@@ -1111,8 +1059,7 @@ where
 {
     let title = util::encode_wide(&attributes.title);
 
-    let class_name = util::encode_wide(&pl_attribs.class_name);
-    register_window_class::<T>(&class_name);
+    let class_name = register_window_class::<T>();
 
     let mut window_flags = WindowFlags::empty();
     window_flags.set(WindowFlags::MARKER_DECORATIONS, attributes.decorations);
@@ -1199,7 +1146,9 @@ where
     Ok(initdata.window.unwrap())
 }
 
-unsafe fn register_window_class<T: 'static>(class_name: &[u16]) {
+unsafe fn register_window_class<T: 'static>() -> Vec<u16> {
+    let class_name = util::encode_wide("Window Class");
+
     let class = WNDCLASSEXW {
         cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
         style: CS_HREDRAW | CS_VREDRAW,
@@ -1220,6 +1169,8 @@ unsafe fn register_window_class<T: 'static>(class_name: &[u16]) {
     // Also since there is no weird element in the struct, there is no reason for this
     //  call to fail.
     RegisterClassExW(&class);
+
+    class_name
 }
 
 struct ComInitialized(*mut ());

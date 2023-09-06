@@ -1,11 +1,11 @@
 use std::os::raw::c_ushort;
 
-use icrate::Foundation::{
+use objc2::encode::{Encode, Encoding};
+use objc2::foundation::{
     CGFloat, NSCopying, NSInteger, NSObject, NSPoint, NSString, NSTimeInterval, NSUInteger,
 };
-use objc2::encode::{Encode, Encoding};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 extern_class!(
     #[derive(Debug, PartialEq, Eq, Hash)]
@@ -13,7 +13,6 @@ extern_class!(
 
     unsafe impl ClassType for NSEvent {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
@@ -25,17 +24,6 @@ extern_class!(
 
 extern_methods!(
     unsafe impl NSEvent {
-        #[method_id(
-            otherEventWithType:
-            location:
-            modifierFlags:
-            timestamp:
-            windowNumber:
-            context:
-            subtype:
-            data1:
-            data2:
-        )]
         unsafe fn otherEventWithType(
             type_: NSEventType,
             location: NSPoint,
@@ -46,9 +34,24 @@ extern_methods!(
             subtype: NSEventSubtype,
             data1: NSInteger,
             data2: NSInteger,
-        ) -> Id<Self>;
+        ) -> Id<Self, Shared> {
+            unsafe {
+                msg_send_id![
+                    Self::class(),
+                    otherEventWithType: type_,
+                    location: location,
+                    modifierFlags: flags,
+                    timestamp: time,
+                    windowNumber: window_num,
+                    context: context,
+                    subtype: subtype,
+                    data1: data1,
+                    data2: data2,
+                ]
+            }
+        }
 
-        pub fn dummy() -> Id<Self> {
+        pub fn dummy() -> Id<Self, Shared> {
             unsafe {
                 Self::otherEventWithType(
                     NSEventType::NSApplicationDefined,
@@ -64,18 +67,6 @@ extern_methods!(
             }
         }
 
-        #[method_id(
-            keyEventWithType:
-            location:
-            modifierFlags:
-            timestamp:
-            windowNumber:
-            context:
-            characters:
-            charactersIgnoringModifiers:
-            isARepeat:
-            keyCode:
-        )]
         pub fn keyEventWithType(
             type_: NSEventType,
             location: NSPoint,
@@ -87,93 +78,95 @@ extern_methods!(
             characters_ignoring_modifiers: &NSString,
             is_a_repeat: bool,
             scancode: c_ushort,
-        ) -> Id<Self>;
+        ) -> Id<Self, Shared> {
+            unsafe {
+                msg_send_id![
+                    Self::class(),
+                    keyEventWithType: type_,
+                    location: location,
+                    modifierFlags: modifier_flags,
+                    timestamp: timestamp,
+                    windowNumber: window_num,
+                    context: context,
+                    characters: characters,
+                    charactersIgnoringModifiers: characters_ignoring_modifiers,
+                    isARepeat: is_a_repeat,
+                    keyCode: scancode,
+                ]
+            }
+        }
 
-        #[method(locationInWindow)]
+        #[sel(locationInWindow)]
         pub fn locationInWindow(&self) -> NSPoint;
 
         // TODO: MainThreadMarker
-        #[method(pressedMouseButtons)]
+        #[sel(pressedMouseButtons)]
         pub fn pressedMouseButtons() -> NSUInteger;
 
-        #[method(modifierFlags)]
+        #[sel(modifierFlags)]
         pub fn modifierFlags(&self) -> NSEventModifierFlags;
 
-        #[method(type)]
+        #[sel(type)]
         pub fn type_(&self) -> NSEventType;
 
-        #[method(keyCode)]
-        pub fn key_code(&self) -> c_ushort;
+        // In AppKit, `keyCode` refers to the position (scancode) of a key rather than its character,
+        // and there is no easy way to navtively retrieve the layout-dependent character.
+        // In winit, we use keycode to refer to the key's character, and so this function aligns
+        // AppKit's terminology with ours.
+        #[sel(keyCode)]
+        pub fn scancode(&self) -> c_ushort;
 
-        #[method(magnification)]
+        #[sel(magnification)]
         pub fn magnification(&self) -> CGFloat;
 
-        #[method(phase)]
+        #[sel(phase)]
         pub fn phase(&self) -> NSEventPhase;
 
-        #[method(momentumPhase)]
+        #[sel(momentumPhase)]
         pub fn momentumPhase(&self) -> NSEventPhase;
 
-        #[method(deltaX)]
+        #[sel(deltaX)]
         pub fn deltaX(&self) -> CGFloat;
 
-        #[method(deltaY)]
+        #[sel(deltaY)]
         pub fn deltaY(&self) -> CGFloat;
 
-        #[method(buttonNumber)]
+        #[sel(buttonNumber)]
         pub fn buttonNumber(&self) -> NSInteger;
 
-        #[method(scrollingDeltaX)]
+        #[sel(scrollingDeltaX)]
         pub fn scrollingDeltaX(&self) -> CGFloat;
 
-        #[method(scrollingDeltaY)]
+        #[sel(scrollingDeltaY)]
         pub fn scrollingDeltaY(&self) -> CGFloat;
 
-        #[method(hasPreciseScrollingDeltas)]
+        #[sel(hasPreciseScrollingDeltas)]
         pub fn hasPreciseScrollingDeltas(&self) -> bool;
 
-        #[method(rotation)]
+        #[sel(rotation)]
         pub fn rotation(&self) -> f32;
 
-        #[method(pressure)]
+        #[sel(pressure)]
         pub fn pressure(&self) -> f32;
 
-        #[method(stage)]
+        #[sel(stage)]
         pub fn stage(&self) -> NSInteger;
 
-        #[method(isARepeat)]
+        #[sel(isARepeat)]
         pub fn is_a_repeat(&self) -> bool;
 
-        #[method(windowNumber)]
+        #[sel(windowNumber)]
         pub fn window_number(&self) -> NSInteger;
 
-        #[method(timestamp)]
+        #[sel(timestamp)]
         pub fn timestamp(&self) -> NSTimeInterval;
 
-        #[method_id(characters)]
-        pub fn characters(&self) -> Option<Id<NSString>>;
-
-        #[method_id(charactersIgnoringModifiers)]
-        pub fn charactersIgnoringModifiers(&self) -> Option<Id<NSString>>;
-
-        pub fn lshift_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICELSHIFTKEYMASK != 0
+        pub fn characters(&self) -> Option<Id<NSString, Shared>> {
+            unsafe { msg_send_id![self, characters] }
         }
 
-        pub fn rshift_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICERSHIFTKEYMASK != 0
-        }
-
-        pub fn lctrl_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICELCTLKEYMASK != 0
-        }
-
-        pub fn rctrl_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICERCTLKEYMASK != 0
+        pub fn charactersIgnoringModifiers(&self) -> Option<Id<NSString, Shared>> {
+            unsafe { msg_send_id![self, charactersIgnoringModifiers] }
         }
 
         pub fn lalt_pressed(&self) -> bool {
@@ -185,33 +178,19 @@ extern_methods!(
             let raw_modifiers = self.modifierFlags().bits() as u32;
             raw_modifiers & NX_DEVICERALTKEYMASK != 0
         }
-
-        pub fn lcmd_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICELCMDKEYMASK != 0
-        }
-
-        pub fn rcmd_pressed(&self) -> bool {
-            let raw_modifiers = self.modifierFlags().bits() as u32;
-            raw_modifiers & NX_DEVICERCMDKEYMASK != 0
-        }
     }
 );
 
-unsafe impl NSCopying for NSEvent {}
+unsafe impl NSCopying for NSEvent {
+    type Ownership = Shared;
+    type Output = NSEvent;
+}
 
 // The values are from the https://github.com/apple-oss-distributions/IOHIDFamily/blob/19666c840a6d896468416ff0007040a10b7b46b8/IOHIDSystem/IOKit/hidsystem/IOLLEvent.h#L258-L259
-const NX_DEVICELCTLKEYMASK: u32 = 0x00000001;
-const NX_DEVICELSHIFTKEYMASK: u32 = 0x00000002;
-const NX_DEVICERSHIFTKEYMASK: u32 = 0x00000004;
-const NX_DEVICELCMDKEYMASK: u32 = 0x00000008;
-const NX_DEVICERCMDKEYMASK: u32 = 0x00000010;
 const NX_DEVICELALTKEYMASK: u32 = 0x00000020;
 const NX_DEVICERALTKEYMASK: u32 = 0x00000040;
-const NX_DEVICERCTLKEYMASK: u32 = 0x00002000;
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct NSEventModifierFlags: NSUInteger {
         const NSAlphaShiftKeyMask                     = 1 << 16;
         const NSShiftKeyMask                          = 1 << 17;
@@ -230,7 +209,6 @@ unsafe impl Encode for NSEventModifierFlags {
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct NSEventPhase: NSUInteger {
        const NSEventPhaseNone        = 0;
        const NSEventPhaseBegan       = 0x1 << 0;

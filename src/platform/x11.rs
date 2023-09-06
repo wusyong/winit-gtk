@@ -1,3 +1,6 @@
+use std::os::raw;
+use std::ptr;
+
 use crate::{
     event_loop::{EventLoopBuilder, EventLoopWindowTarget},
     monitor::MonitorHandle,
@@ -5,7 +8,9 @@ use crate::{
 };
 
 use crate::dpi::Size;
-use crate::platform_impl::{ApplicationName, Backend, XLIB_ERROR_HOOKS};
+use crate::platform_impl::{
+    x11::ffi::XVisualInfo, ApplicationName, Backend, Window as LinuxWindow, XLIB_ERROR_HOOKS,
+};
 
 pub use crate::platform_impl::{x11::util::WindowType as XWindowType, XNotSupported};
 
@@ -16,12 +21,6 @@ pub use crate::platform_impl::{x11::util::WindowType as XWindowType, XNotSupport
 /// [`XErrorEvent`]: https://linux.die.net/man/3/xerrorevent
 pub type XlibErrorHook =
     Box<dyn Fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> bool + Send + Sync>;
-
-/// A unique identifer for an X11 visual.
-pub type XVisualID = u32;
-
-/// A unique identifier for an X11 window.
-pub type XWindow = u32;
 
 /// Hook to winit's xlib error handling callback.
 ///
@@ -82,14 +81,70 @@ impl<T> EventLoopBuilderExtX11 for EventLoopBuilder<T> {
 }
 
 /// Additional methods on [`Window`] that are specific to X11.
-pub trait WindowExtX11 {}
+pub trait WindowExtX11 {
+    /// Returns the ID of the [`Window`] xlib object that is used by this window.
+    ///
+    /// Returns `None` if the window doesn't use xlib (if it uses wayland for example).
+    fn xlib_window(&self) -> Option<raw::c_ulong>;
 
-impl WindowExtX11 for Window {}
+    /// Returns a pointer to the `Display` object of xlib that is used by this window.
+    ///
+    /// Returns `None` if the window doesn't use xlib (if it uses wayland for example).
+    ///
+    /// The pointer will become invalid when the [`Window`] is destroyed.
+    fn xlib_display(&self) -> Option<*mut raw::c_void>;
+
+    fn xlib_screen_id(&self) -> Option<raw::c_int>;
+
+    /// This function returns the underlying `xcb_connection_t` of an xlib `Display`.
+    ///
+    /// Returns `None` if the window doesn't use xlib (if it uses wayland for example).
+    ///
+    /// The pointer will become invalid when the [`Window`] is destroyed.
+    fn xcb_connection(&self) -> Option<*mut raw::c_void>;
+}
+
+impl WindowExtX11 for Window {
+    #[inline]
+    fn xlib_window(&self) -> Option<raw::c_ulong> {
+        match self.window {
+            LinuxWindow::X(ref w) => Some(w.xlib_window()),
+            #[cfg(wayland_platform)]
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn xlib_display(&self) -> Option<*mut raw::c_void> {
+        match self.window {
+            LinuxWindow::X(ref w) => Some(w.xlib_display()),
+            #[cfg(wayland_platform)]
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn xlib_screen_id(&self) -> Option<raw::c_int> {
+        match self.window {
+            LinuxWindow::X(ref w) => Some(w.xlib_screen_id()),
+            #[cfg(wayland_platform)]
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn xcb_connection(&self) -> Option<*mut raw::c_void> {
+        match self.window {
+            LinuxWindow::X(ref w) => Some(w.xcb_connection()),
+            #[cfg(wayland_platform)]
+            _ => None,
+        }
+    }
+}
 
 /// Additional methods on [`WindowBuilder`] that are specific to X11.
 pub trait WindowBuilderExtX11 {
-    /// Create this window with a specific X11 visual.
-    fn with_x11_visual(self, visual_id: XVisualID) -> Self;
+    fn with_x11_visual<T>(self, visual_infos: *const T) -> Self;
 
     fn with_x11_screen(self, screen_id: i32) -> Self;
 
@@ -121,35 +176,21 @@ pub trait WindowBuilderExtX11 {
     /// WindowBuilder::new().with_base_size(PhysicalSize::new(400, 200));
     /// ```
     fn with_base_size<S: Into<Size>>(self, base_size: S) -> Self;
-
-    /// Embed this window into another parent window.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use winit::window::WindowBuilder;
-    /// use winit::platform::x11::{XWindow, WindowBuilderExtX11};
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let event_loop = winit::event_loop::EventLoop::new().unwrap();
-    /// let parent_window_id = std::env::args().nth(1).unwrap().parse::<XWindow>()?;
-    /// let window = WindowBuilder::new()
-    ///     .with_embed_parent_window(parent_window_id)
-    ///     .build(&event_loop)?;
-    /// # Ok(()) }
-    /// ```
-    fn with_embed_parent_window(self, parent_window_id: XWindow) -> Self;
 }
 
 impl WindowBuilderExtX11 for WindowBuilder {
     #[inline]
-    fn with_x11_visual(mut self, visual_id: XVisualID) -> Self {
-        self.platform_specific.x11.visual_id = Some(visual_id);
+    fn with_x11_visual<T>(mut self, visual_infos: *const T) -> Self {
+        {
+            self.platform_specific.visual_infos =
+                Some(unsafe { ptr::read(visual_infos as *const XVisualInfo) });
+        }
         self
     }
 
     #[inline]
     fn with_x11_screen(mut self, screen_id: i32) -> Self {
-        self.platform_specific.x11.screen_id = Some(screen_id);
+        self.platform_specific.screen_id = Some(screen_id);
         self
     }
 
@@ -161,25 +202,19 @@ impl WindowBuilderExtX11 for WindowBuilder {
 
     #[inline]
     fn with_override_redirect(mut self, override_redirect: bool) -> Self {
-        self.platform_specific.x11.override_redirect = override_redirect;
+        self.platform_specific.override_redirect = override_redirect;
         self
     }
 
     #[inline]
     fn with_x11_window_type(mut self, x11_window_types: Vec<XWindowType>) -> Self {
-        self.platform_specific.x11.x11_window_types = x11_window_types;
+        self.platform_specific.x11_window_types = x11_window_types;
         self
     }
 
     #[inline]
     fn with_base_size<S: Into<Size>>(mut self, base_size: S) -> Self {
-        self.platform_specific.x11.base_size = Some(base_size.into());
-        self
-    }
-
-    #[inline]
-    fn with_embed_parent_window(mut self, parent_window_id: XWindow) -> Self {
-        self.platform_specific.x11.embed_window = Some(parent_window_id);
+        self.platform_specific.base_size = Some(base_size.into());
         self
     }
 }

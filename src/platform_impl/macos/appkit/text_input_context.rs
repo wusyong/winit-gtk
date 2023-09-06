@@ -1,6 +1,6 @@
-use icrate::Foundation::{NSObject, NSString};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::{NSObject, NSString};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 type NSTextInputSourceIdentifier = NSString;
 
@@ -11,19 +11,21 @@ extern_class!(
 
     unsafe impl ClassType for NSTextInputContext {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
 extern_methods!(
     unsafe impl NSTextInputContext {
-        #[method(invalidateCharacterCoordinates)]
+        #[sel(invalidateCharacterCoordinates)]
         pub fn invalidateCharacterCoordinates(&self);
 
-        #[method(discardMarkedText)]
+        #[sel(discardMarkedText)]
         pub fn discardMarkedText(&self);
 
-        #[method_id(selectedKeyboardInputSource)]
-        pub fn selectedKeyboardInputSource(&self) -> Option<Id<NSTextInputSourceIdentifier>>;
+        pub fn selectedKeyboardInputSource(
+            &self,
+        ) -> Option<Id<NSTextInputSourceIdentifier, Shared>> {
+            unsafe { msg_send_id![self, selectedKeyboardInputSource] }
+        }
     }
 );

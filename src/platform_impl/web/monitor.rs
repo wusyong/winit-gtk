@@ -1,5 +1,3 @@
-use std::iter::Empty;
-
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -7,27 +5,30 @@ pub struct MonitorHandle;
 
 impl MonitorHandle {
     pub fn scale_factor(&self) -> f64 {
-        unreachable!()
+        1.0
     }
 
     pub fn position(&self) -> PhysicalPosition<i32> {
-        unreachable!()
+        PhysicalPosition { x: 0, y: 0 }
     }
 
     pub fn name(&self) -> Option<String> {
-        unreachable!()
+        None
     }
 
     pub fn refresh_rate_millihertz(&self) -> Option<u32> {
-        unreachable!()
+        None
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
-        unreachable!()
+        PhysicalSize {
+            width: 0,
+            height: 0,
+        }
     }
 
-    pub fn video_modes(&self) -> Empty<VideoMode> {
-        unreachable!()
+    pub fn video_modes(&self) -> impl Iterator<Item = VideoMode> {
+        std::iter::empty()
     }
 }
 
@@ -36,18 +37,18 @@ pub struct VideoMode;
 
 impl VideoMode {
     pub fn size(&self) -> PhysicalSize<u32> {
-        unreachable!();
+        unimplemented!();
     }
 
     pub fn bit_depth(&self) -> u16 {
-        unreachable!();
+        unimplemented!();
     }
 
     pub fn refresh_rate_millihertz(&self) -> u32 {
-        unreachable!();
+        32000
     }
 
     pub fn monitor(&self) -> MonitorHandle {
-        unreachable!();
+        MonitorHandle
     }
 }

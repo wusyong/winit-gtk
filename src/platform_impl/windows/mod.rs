@@ -1,6 +1,5 @@
 #![cfg(windows_platform)]
 
-use smol_str::SmolStr;
 use windows_sys::Win32::{
     Foundation::{HANDLE, HWND},
     UI::WindowsAndMessaging::{HMENU, WINDOW_LONG_PTR_INDEX},
@@ -16,11 +15,10 @@ pub(crate) use self::{
 };
 
 pub use self::icon::WinIcon as PlatformIcon;
-use crate::platform_impl::Fullscreen;
+pub(self) use crate::platform_impl::Fullscreen;
 
 use crate::event::DeviceId as RootDeviceId;
 use crate::icon::Icon;
-use crate::keyboard::Key;
 
 #[derive(Clone)]
 pub struct PlatformSpecificWindowBuilderAttributes {
@@ -30,7 +28,6 @@ pub struct PlatformSpecificWindowBuilderAttributes {
     pub no_redirection_bitmap: bool,
     pub drag_and_drop: bool,
     pub skip_taskbar: bool,
-    pub class_name: String,
     pub decoration_shadow: bool,
 }
 
@@ -43,7 +40,6 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
             no_redirection_bitmap: false,
             drag_and_drop: true,
             skip_taskbar: false,
-            class_name: "Window Class".to_string(),
             decoration_shadow: false,
         }
     }
@@ -85,12 +81,6 @@ fn wrap_device_id(id: u32) -> RootDeviceId {
 }
 
 pub type OsError = std::io::Error;
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct KeyEventExtra {
-    pub text_with_all_modifers: Option<SmolStr>,
-    pub key_without_modifiers: Key,
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowId(HWND);
@@ -137,12 +127,7 @@ const fn get_y_lparam(x: u32) -> i16 {
 }
 
 #[inline(always)]
-pub(crate) const fn primarylangid(lgid: u16) -> u16 {
-    lgid & 0x3FF
-}
-
-#[inline(always)]
-pub(crate) const fn loword(x: u32) -> u16 {
+const fn loword(x: u32) -> u16 {
     (x & 0xFFFF) as u16
 }
 
@@ -177,11 +162,10 @@ mod dark_mode;
 mod definitions;
 mod dpi;
 mod drop_handler;
+mod event;
 mod event_loop;
 mod icon;
 mod ime;
-mod keyboard;
-mod keyboard_layout;
 mod monitor;
 mod raw_input;
 mod window;

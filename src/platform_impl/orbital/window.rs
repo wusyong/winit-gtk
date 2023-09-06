@@ -126,14 +126,6 @@ impl Window {
         })
     }
 
-    pub(crate) fn maybe_queue_on_main(&self, f: impl FnOnce(&Self) + Send + 'static) {
-        f(self)
-    }
-
-    pub(crate) fn maybe_wait_on_main<R: Send>(&self, f: impl FnOnce(&Self) -> R + Send) -> R {
-        f(self)
-    }
-
     #[inline]
     pub fn id(&self) -> WindowId {
         WindowId {
@@ -175,14 +167,6 @@ impl Window {
     }
 
     #[inline]
-    pub fn pre_present_notify(&self) {}
-
-    #[inline]
-    pub fn reset_dead_keys(&self) {
-        // TODO?
-    }
-
-    #[inline]
     pub fn inner_position(&self) -> Result<PhysicalPosition<i32>, error::NotSupportedError> {
         let mut buf: [u8; 4096] = [0; 4096];
         let path = self
@@ -220,12 +204,11 @@ impl Window {
     }
 
     #[inline]
-    pub fn request_inner_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+    pub fn set_inner_size(&self, size: Size) {
         let (w, h): (u32, u32) = size.to_physical::<u32>(self.scale_factor()).into();
         self.window_socket
             .write(format!("S,{w},{h}").as_bytes())
             .expect("failed to set size");
-        None
     }
 
     #[inline]
@@ -336,7 +319,7 @@ impl Window {
     pub fn set_window_icon(&self, _window_icon: Option<crate::icon::Icon>) {}
 
     #[inline]
-    pub fn set_ime_cursor_area(&self, _position: Position, _size: Size) {}
+    pub fn set_ime_position(&self, _position: Position) {}
 
     #[inline]
     pub fn set_ime_allowed(&self, _allowed: bool) {}
@@ -426,8 +409,6 @@ impl Window {
 
     #[inline]
     pub fn set_theme(&self, _theme: Option<window::Theme>) {}
-
-    pub fn set_content_protected(&self, _protected: bool) {}
 }
 
 impl Drop for Window {

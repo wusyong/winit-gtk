@@ -1,4 +1,4 @@
-use crate::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, LogicalPosition};
+use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MonitorHandle {

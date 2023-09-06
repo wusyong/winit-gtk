@@ -1,10 +1,10 @@
 use std::{
     cell::RefCell,
+    collections::VecDeque,
     rc::Rc,
-    sync::atomic::{AtomicBool, AtomicI32, Ordering}, collections::VecDeque,
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
-use cursor_icon::CursorIcon;
 use gtk::traits::WidgetExt;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
@@ -12,10 +12,15 @@ use crate::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size},
     error::{ExternalError, NotSupportedError, OsError as RootOsError},
     platform_impl::WindowId,
-    window::{CursorGrabMode, ResizeDirection, WindowAttributes, WindowButtons, Theme, UserAttentionType, ImePurpose, Icon, WindowLevel}, event_loop::AsyncRequestSerial,
+    window::{
+        CursorGrabMode, CursorIcon, Icon, ImePurpose, ResizeDirection, Theme, UserAttentionType,
+        WindowAttributes, WindowButtons, WindowLevel,
+    },
 };
 
-use super::{EventLoopWindowTarget, Fullscreen, PlatformSpecificWindowBuilderAttributes, MonitorHandle};
+use super::{
+    EventLoopWindowTarget, Fullscreen, MonitorHandle, PlatformSpecificWindowBuilderAttributes,
+};
 
 pub(crate) enum WindowRequest {
     Title(String),
@@ -168,7 +173,7 @@ impl Window {
     }
 
     #[inline]
-    pub fn request_inner_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+    pub fn set_inner_size(&self, size: Size) {
         let (width, height) = size.to_logical::<i32>(self.scale_factor()).into();
 
         if let Err(e) = self
@@ -177,14 +182,6 @@ impl Window {
         {
             log::warn!("Fail to send size request: {}", e);
         }
-
-        // TODO check request can be done or not.
-        None
-    }
-
-    #[inline]
-    pub(crate) fn request_activation_token(&self) -> Result<AsyncRequestSerial, NotSupportedError> {
-        todo!()
     }
 
     #[inline]
@@ -324,6 +321,11 @@ impl Window {
 
     #[inline]
     pub fn reset_dead_keys(&self) {
+        todo!()
+    }
+
+    #[inline]
+    pub fn set_ime_position(&self, position: Position) {
         todo!()
     }
 

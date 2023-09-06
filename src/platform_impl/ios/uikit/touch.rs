@@ -1,6 +1,6 @@
-use icrate::Foundation::{CGFloat, CGPoint, NSInteger, NSObject};
 use objc2::encode::{Encode, Encoding};
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::{CGFloat, CGPoint, NSInteger, NSObject};
+use objc2::{extern_class, extern_methods, ClassType};
 
 use super::UIView;
 
@@ -10,28 +10,27 @@ extern_class!(
 
     unsafe impl ClassType for UITouch {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
 extern_methods!(
     unsafe impl UITouch {
-        #[method(locationInView:)]
+        #[sel(locationInView:)]
         pub fn locationInView(&self, view: Option<&UIView>) -> CGPoint;
 
-        #[method(type)]
+        #[sel(type)]
         pub fn type_(&self) -> UITouchType;
 
-        #[method(force)]
+        #[sel(force)]
         pub fn force(&self) -> CGFloat;
 
-        #[method(maximumPossibleForce)]
+        #[sel(maximumPossibleForce)]
         pub fn maximumPossibleForce(&self) -> CGFloat;
 
-        #[method(altitudeAngle)]
+        #[sel(altitudeAngle)]
         pub fn altitudeAngle(&self) -> CGFloat;
 
-        #[method(phase)]
+        #[sel(phase)]
         pub fn phase(&self) -> UITouchPhase;
     }
 );

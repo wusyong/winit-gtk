@@ -1,7 +1,7 @@
-use icrate::Foundation::{NSObject, NSUInteger};
 use objc2::encode::{Encode, Encoding};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, msg_send_id, mutability, ClassType};
+use objc2::foundation::{NSObject, NSUInteger};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 use super::{UIResponder, UIView};
 
@@ -12,35 +12,33 @@ extern_class!(
     unsafe impl ClassType for UIViewController {
         #[inherits(NSObject)]
         type Super = UIResponder;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
 extern_methods!(
     unsafe impl UIViewController {
-        #[method(attemptRotationToDeviceOrientation)]
+        #[sel(attemptRotationToDeviceOrientation)]
         pub fn attemptRotationToDeviceOrientation();
 
-        #[method(setNeedsStatusBarAppearanceUpdate)]
+        #[sel(setNeedsStatusBarAppearanceUpdate)]
         pub fn setNeedsStatusBarAppearanceUpdate(&self);
 
-        #[method(setNeedsUpdateOfHomeIndicatorAutoHidden)]
+        #[sel(setNeedsUpdateOfHomeIndicatorAutoHidden)]
         pub fn setNeedsUpdateOfHomeIndicatorAutoHidden(&self);
 
-        #[method(setNeedsUpdateOfScreenEdgesDeferringSystemGestures)]
+        #[sel(setNeedsUpdateOfScreenEdgesDeferringSystemGestures)]
         pub fn setNeedsUpdateOfScreenEdgesDeferringSystemGestures(&self);
 
-        pub fn view(&self) -> Option<Id<UIView>> {
+        pub fn view(&self) -> Option<Id<UIView, Shared>> {
             unsafe { msg_send_id![self, view] }
         }
 
-        #[method(setView:)]
+        #[sel(setView:)]
         pub fn setView(&self, view: Option<&UIView>);
     }
 );
 
 bitflags! {
-    #[derive(Clone, Copy)]
     pub struct UIInterfaceOrientationMask: NSUInteger {
         const Portrait = 1 << 1;
         const PortraitUpsideDown = 1 << 2;

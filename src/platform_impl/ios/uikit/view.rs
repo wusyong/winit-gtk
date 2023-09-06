@@ -1,7 +1,7 @@
-use icrate::Foundation::{CGFloat, CGRect, NSObject};
 use objc2::encode::{Encode, Encoding};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, msg_send_id, mutability, ClassType};
+use objc2::foundation::{CGFloat, CGRect, NSObject};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 use super::{UICoordinateSpace, UIResponder, UIViewController};
 
@@ -12,58 +12,57 @@ extern_class!(
     unsafe impl ClassType for UIView {
         #[inherits(NSObject)]
         type Super = UIResponder;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
 extern_methods!(
     unsafe impl UIView {
-        #[method(bounds)]
+        #[sel(bounds)]
         pub fn bounds(&self) -> CGRect;
 
-        #[method(setBounds:)]
+        #[sel(setBounds:)]
         pub fn setBounds(&self, value: CGRect);
 
-        #[method(frame)]
+        #[sel(frame)]
         pub fn frame(&self) -> CGRect;
 
-        #[method(setFrame:)]
+        #[sel(setFrame:)]
         pub fn setFrame(&self, value: CGRect);
 
-        #[method(contentScaleFactor)]
+        #[sel(contentScaleFactor)]
         pub fn contentScaleFactor(&self) -> CGFloat;
 
-        #[method(setContentScaleFactor:)]
+        #[sel(setContentScaleFactor:)]
         pub fn setContentScaleFactor(&self, val: CGFloat);
 
-        #[method(setMultipleTouchEnabled:)]
+        #[sel(setMultipleTouchEnabled:)]
         pub fn setMultipleTouchEnabled(&self, val: bool);
 
-        pub fn rootViewController(&self) -> Option<Id<UIViewController>> {
+        pub fn rootViewController(&self) -> Option<Id<UIViewController, Shared>> {
             unsafe { msg_send_id![self, rootViewController] }
         }
 
-        #[method(setRootViewController:)]
+        #[sel(setRootViewController:)]
         pub fn setRootViewController(&self, rootViewController: Option<&UIViewController>);
 
-        #[method(convertRect:toCoordinateSpace:)]
+        #[sel(convertRect:toCoordinateSpace:)]
         pub fn convertRect_toCoordinateSpace(
             &self,
             rect: CGRect,
             coordinateSpace: &UICoordinateSpace,
         ) -> CGRect;
 
-        #[method(convertRect:fromCoordinateSpace:)]
+        #[sel(convertRect:fromCoordinateSpace:)]
         pub fn convertRect_fromCoordinateSpace(
             &self,
             rect: CGRect,
             coordinateSpace: &UICoordinateSpace,
         ) -> CGRect;
 
-        #[method(safeAreaInsets)]
+        #[sel(safeAreaInsets)]
         pub fn safeAreaInsets(&self) -> UIEdgeInsets;
 
-        #[method(setNeedsDisplay)]
+        #[sel(setNeedsDisplay)]
         pub fn setNeedsDisplay(&self);
     }
 );

@@ -1,6 +1,6 @@
-use icrate::Foundation::{NSArray, NSObject, NSString};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::{NSArray, NSObject, NSString};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 extern_class!(
     #[derive(Debug, PartialEq, Eq, Hash)]
@@ -8,7 +8,6 @@ extern_class!(
 
     unsafe impl ClassType for NSAppearance {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
@@ -16,13 +15,15 @@ type NSAppearanceName = NSString;
 
 extern_methods!(
     unsafe impl NSAppearance {
-        #[method_id(appearanceNamed:)]
-        pub fn appearanceNamed(name: &NSAppearanceName) -> Id<Self>;
+        pub fn appearanceNamed(name: &NSAppearanceName) -> Id<Self, Shared> {
+            unsafe { msg_send_id![Self::class(), appearanceNamed: name] }
+        }
 
-        #[method_id(bestMatchFromAppearancesWithNames:)]
         pub fn bestMatchFromAppearancesWithNames(
             &self,
             appearances: &NSArray<NSAppearanceName>,
-        ) -> Id<NSAppearanceName>;
+        ) -> Id<NSAppearanceName, Shared> {
+            unsafe { msg_send_id![self, bestMatchFromAppearancesWithNames: appearances,] }
+        }
     }
 );

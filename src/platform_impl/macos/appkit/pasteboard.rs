@@ -1,6 +1,6 @@
-use icrate::Foundation::{NSObject, NSString};
-use objc2::rc::Id;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::{NSObject, NSString};
+use objc2::rc::{Id, Shared};
+use objc2::{extern_class, extern_methods, msg_send_id, ClassType};
 
 extern_class!(
     #[derive(Debug, PartialEq, Eq, Hash)]
@@ -8,14 +8,14 @@ extern_class!(
 
     unsafe impl ClassType for NSPasteboard {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
 extern_methods!(
     unsafe impl NSPasteboard {
-        #[method_id(propertyListForType:)]
-        pub fn propertyListForType(&self, type_: &NSPasteboardType) -> Id<NSObject>;
+        pub fn propertyListForType(&self, type_: &NSPasteboardType) -> Id<NSObject, Shared> {
+            unsafe { msg_send_id![self, propertyListForType: type_] }
+        }
     }
 );
 

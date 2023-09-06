@@ -1,14 +1,17 @@
 #![allow(clippy::unnecessary_cast)]
 
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    ffi::c_void,
+    ops::{Deref, DerefMut},
+};
 
-use icrate::Foundation::{CGFloat, CGPoint, CGRect, CGSize, MainThreadBound, MainThreadMarker};
-use objc2::rc::Id;
-use objc2::runtime::AnyObject;
+use objc2::foundation::{CGFloat, CGPoint, CGRect, CGSize, MainThreadMarker};
+use objc2::rc::{Id, Shared};
+use objc2::runtime::Object;
 use objc2::{class, msg_send};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle, UiKitDisplayHandle, UiKitWindowHandle};
 
-use super::app_state::EventWrapper;
 use super::uikit::{UIApplication, UIScreen, UIScreenOverscanCompensation};
 use super::view::{WinitUIWindow, WinitView, WinitViewController};
 use crate::{
@@ -18,7 +21,10 @@ use crate::{
     icon::Icon,
     platform::ios::{ScreenEdge, ValidOrientations},
     platform_impl::platform::{
-        app_state, monitor, EventLoopWindowTarget, Fullscreen, MonitorHandle,
+        app_state,
+        event_loop::{EventProxy, EventWrapper},
+        ffi::UIRectEdge,
+        monitor, EventLoopWindowTarget, Fullscreen, MonitorHandle,
     },
     window::{
         CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme, UserAttentionType,
@@ -27,9 +33,9 @@ use crate::{
 };
 
 pub struct Inner {
-    window: Id<WinitUIWindow>,
-    view_controller: Id<WinitViewController>,
-    view: Id<WinitView>,
+    pub(crate) window: Id<WinitUIWindow, Shared>,
+    pub(crate) view_controller: Id<WinitViewController, Shared>,
+    pub(crate) view: Id<WinitView, Shared>,
     gl_or_metal_backed: bool,
 }
 
@@ -52,81 +58,90 @@ impl Inner {
     }
 
     pub fn request_redraw(&self) {
-        if self.gl_or_metal_backed {
-            let mtm = MainThreadMarker::new().unwrap();
-            // `setNeedsDisplay` does nothing on UIViews which are directly backed by CAEAGLLayer or CAMetalLayer.
-            // Ordinarily the OS sets up a bunch of UIKit state before calling drawRect: on a UIView, but when using
-            // raw or gl/metal for drawing this work is completely avoided.
-            //
-            // The docs for `setNeedsDisplay` don't mention `CAMetalLayer`; however, this has been confirmed via
-            // testing.
-            //
-            // https://developer.apple.com/documentation/uikit/uiview/1622437-setneedsdisplay?language=objc
-            app_state::queue_gl_or_metal_redraw(mtm, self.window.clone());
-        } else {
-            self.view.setNeedsDisplay();
+        unsafe {
+            if self.gl_or_metal_backed {
+                // `setNeedsDisplay` does nothing on UIViews which are directly backed by CAEAGLLayer or CAMetalLayer.
+                // Ordinarily the OS sets up a bunch of UIKit state before calling drawRect: on a UIView, but when using
+                // raw or gl/metal for drawing this work is completely avoided.
+                //
+                // The docs for `setNeedsDisplay` don't mention `CAMetalLayer`; however, this has been confirmed via
+                // testing.
+                //
+                // https://developer.apple.com/documentation/uikit/uiview/1622437-setneedsdisplay?language=objc
+                app_state::queue_gl_or_metal_redraw(self.window.clone());
+            } else {
+                self.view.setNeedsDisplay();
+            }
         }
     }
 
-    pub fn pre_present_notify(&self) {}
-
     pub fn inner_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
-        let safe_area = self.safe_area_screen_space();
-        let position = LogicalPosition {
-            x: safe_area.origin.x as f64,
-            y: safe_area.origin.y as f64,
-        };
-        let scale_factor = self.scale_factor();
-        Ok(position.to_physical(scale_factor))
+        unsafe {
+            let safe_area = self.safe_area_screen_space();
+            let position = LogicalPosition {
+                x: safe_area.origin.x as f64,
+                y: safe_area.origin.y as f64,
+            };
+            let scale_factor = self.scale_factor();
+            Ok(position.to_physical(scale_factor))
+        }
     }
 
     pub fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
-        let screen_frame = self.screen_frame();
-        let position = LogicalPosition {
-            x: screen_frame.origin.x as f64,
-            y: screen_frame.origin.y as f64,
-        };
-        let scale_factor = self.scale_factor();
-        Ok(position.to_physical(scale_factor))
+        unsafe {
+            let screen_frame = self.screen_frame();
+            let position = LogicalPosition {
+                x: screen_frame.origin.x as f64,
+                y: screen_frame.origin.y as f64,
+            };
+            let scale_factor = self.scale_factor();
+            Ok(position.to_physical(scale_factor))
+        }
     }
 
     pub fn set_outer_position(&self, physical_position: Position) {
-        let scale_factor = self.scale_factor();
-        let position = physical_position.to_logical::<f64>(scale_factor);
-        let screen_frame = self.screen_frame();
-        let new_screen_frame = CGRect {
-            origin: CGPoint {
-                x: position.x as _,
-                y: position.y as _,
-            },
-            size: screen_frame.size,
-        };
-        let bounds = self.rect_from_screen_space(new_screen_frame);
-        self.window.setBounds(bounds);
+        unsafe {
+            let scale_factor = self.scale_factor();
+            let position = physical_position.to_logical::<f64>(scale_factor);
+            let screen_frame = self.screen_frame();
+            let new_screen_frame = CGRect {
+                origin: CGPoint {
+                    x: position.x as _,
+                    y: position.y as _,
+                },
+                size: screen_frame.size,
+            };
+            let bounds = self.rect_from_screen_space(new_screen_frame);
+            self.window.setBounds(bounds);
+        }
     }
 
     pub fn inner_size(&self) -> PhysicalSize<u32> {
-        let scale_factor = self.scale_factor();
-        let safe_area = self.safe_area_screen_space();
-        let size = LogicalSize {
-            width: safe_area.size.width as f64,
-            height: safe_area.size.height as f64,
-        };
-        size.to_physical(scale_factor)
+        unsafe {
+            let scale_factor = self.scale_factor();
+            let safe_area = self.safe_area_screen_space();
+            let size = LogicalSize {
+                width: safe_area.size.width as f64,
+                height: safe_area.size.height as f64,
+            };
+            size.to_physical(scale_factor)
+        }
     }
 
     pub fn outer_size(&self) -> PhysicalSize<u32> {
-        let scale_factor = self.scale_factor();
-        let screen_frame = self.screen_frame();
-        let size = LogicalSize {
-            width: screen_frame.size.width as f64,
-            height: screen_frame.size.height as f64,
-        };
-        size.to_physical(scale_factor)
+        unsafe {
+            let scale_factor = self.scale_factor();
+            let screen_frame = self.screen_frame();
+            let size = LogicalSize {
+                width: screen_frame.size.width as f64,
+                height: screen_frame.size.height as f64,
+            };
+            size.to_physical(scale_factor)
+        }
     }
 
-    pub fn request_inner_size(&self, _size: Size) -> Option<PhysicalSize<u32>> {
-        Some(self.inner_size())
+    pub fn set_inner_size(&self, _size: Size) {
+        warn!("not clear what `Window::set_inner_size` means on iOS");
     }
 
     pub fn set_min_inner_size(&self, _dimensions: Option<Size>) {
@@ -217,17 +232,14 @@ impl Inner {
     }
 
     pub(crate) fn set_fullscreen(&self, monitor: Option<Fullscreen>) {
-        let mtm = MainThreadMarker::new().unwrap();
         let uiscreen = match &monitor {
             Some(Fullscreen::Exclusive(video_mode)) => {
-                let uiscreen = video_mode.monitor.ui_screen(mtm);
-                uiscreen.setCurrentMode(Some(video_mode.screen_mode(mtm)));
+                let uiscreen = video_mode.monitor.ui_screen();
+                uiscreen.setCurrentMode(Some(&video_mode.screen_mode.0));
                 uiscreen.clone()
             }
-            Some(Fullscreen::Borderless(Some(monitor))) => monitor.ui_screen(mtm).clone(),
-            Some(Fullscreen::Borderless(None)) => {
-                self.current_monitor_inner().ui_screen(mtm).clone()
-            }
+            Some(Fullscreen::Borderless(Some(monitor))) => monitor.ui_screen().clone(),
+            Some(Fullscreen::Borderless(None)) => self.current_monitor_inner().ui_screen().clone(),
             None => {
                 warn!("`Window::set_fullscreen(None)` ignored on iOS");
                 return;
@@ -250,21 +262,22 @@ impl Inner {
     }
 
     pub(crate) fn fullscreen(&self) -> Option<Fullscreen> {
-        let mtm = MainThreadMarker::new().unwrap();
-        let monitor = self.current_monitor_inner();
-        let uiscreen = monitor.ui_screen(mtm);
-        let screen_space_bounds = self.screen_frame();
-        let screen_bounds = uiscreen.bounds();
+        unsafe {
+            let monitor = self.current_monitor_inner();
+            let uiscreen = monitor.ui_screen();
+            let screen_space_bounds = self.screen_frame();
+            let screen_bounds = uiscreen.bounds();
 
-        // TODO: track fullscreen instead of relying on brittle float comparisons
-        if screen_space_bounds.origin.x == screen_bounds.origin.x
-            && screen_space_bounds.origin.y == screen_bounds.origin.y
-            && screen_space_bounds.size.width == screen_bounds.size.width
-            && screen_space_bounds.size.height == screen_bounds.size.height
-        {
-            Some(Fullscreen::Borderless(Some(monitor)))
-        } else {
-            None
+            // TODO: track fullscreen instead of relying on brittle float comparisons
+            if screen_space_bounds.origin.x == screen_bounds.origin.x
+                && screen_space_bounds.origin.y == screen_bounds.origin.y
+                && screen_space_bounds.size.width == screen_bounds.size.width
+                && screen_space_bounds.size.height == screen_bounds.size.height
+            {
+                Some(Fullscreen::Borderless(Some(monitor)))
+            } else {
+                None
+            }
         }
     }
 
@@ -282,8 +295,8 @@ impl Inner {
         warn!("`Window::set_window_icon` is ignored on iOS")
     }
 
-    pub fn set_ime_cursor_area(&self, _position: Position, _size: Size) {
-        warn!("`Window::set_ime_cursor_area` is ignored on iOS")
+    pub fn set_ime_position(&self, _position: Position) {
+        warn!("`Window::set_ime_position` is ignored on iOS")
     }
 
     pub fn set_ime_allowed(&self, _allowed: bool) {
@@ -342,8 +355,6 @@ impl Inner {
         None
     }
 
-    pub fn set_content_protected(&self, _protected: bool) {}
-
     pub fn has_focus(&self) -> bool {
         self.window.isKeyWindow()
     }
@@ -357,23 +368,44 @@ impl Inner {
         warn!("`Window::title` is ignored on iOS");
         String::new()
     }
-
-    pub fn reset_dead_keys(&self) {
-        // Noop
-    }
 }
 
 pub struct Window {
-    inner: MainThreadBound<Inner>,
+    pub inner: Inner,
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        assert_main_thread!("`Window::drop` can only be run on the main thread on iOS");
+    }
+}
+
+unsafe impl Send for Window {}
+unsafe impl Sync for Window {}
+
+impl Deref for Window {
+    type Target = Inner;
+
+    fn deref(&self) -> &Inner {
+        assert_main_thread!("`Window` methods can only be run on the main thread on iOS");
+        &self.inner
+    }
+}
+
+impl DerefMut for Window {
+    fn deref_mut(&mut self) -> &mut Inner {
+        assert_main_thread!("`Window` methods can only be run on the main thread on iOS");
+        &mut self.inner
+    }
 }
 
 impl Window {
     pub(crate) fn new<T>(
-        event_loop: &EventLoopWindowTarget<T>,
+        _event_loop: &EventLoopWindowTarget<T>,
         window_attributes: WindowAttributes,
         platform_attributes: PlatformSpecificWindowBuilderAttributes,
     ) -> Result<Window, RootOsError> {
-        let mtm = event_loop.mtm;
+        let mtm = MainThreadMarker::new().unwrap();
 
         if window_attributes.min_inner_size.is_some() {
             warn!("`WindowAttributes::min_inner_size` is ignored on iOS");
@@ -387,8 +419,8 @@ impl Window {
         let main_screen = UIScreen::main(mtm);
         let fullscreen = window_attributes.fullscreen.clone().map(Into::into);
         let screen = match fullscreen {
-            Some(Fullscreen::Exclusive(ref video_mode)) => video_mode.monitor.ui_screen(mtm),
-            Some(Fullscreen::Borderless(Some(ref monitor))) => monitor.ui_screen(mtm),
+            Some(Fullscreen::Exclusive(ref video_mode)) => video_mode.monitor.ui_screen(),
+            Some(Fullscreen::Borderless(Some(ref monitor))) => monitor.ui_screen(),
             Some(Fullscreen::Borderless(None)) | None => &main_screen,
         };
 
@@ -428,7 +460,7 @@ impl Window {
             &view_controller,
         );
 
-        app_state::set_key_window(mtm, &window);
+        unsafe { app_state::set_key_window(&window) };
 
         // Like the Windows and macOS backends, we send a `ScaleFactorChanged` and `Resized`
         // event on window creation if the DPI factor != 1.0
@@ -440,51 +472,50 @@ impl Window {
             let screen_space = screen.coordinateSpace();
             let screen_frame = view.convertRect_toCoordinateSpace(bounds, &screen_space);
             let size = crate::dpi::LogicalSize {
-                width: screen_frame.size.width as f64,
-                height: screen_frame.size.height as f64,
+                width: screen_frame.size.width as _,
+                height: screen_frame.size.height as _,
             };
             let window_id = RootWindowId(window.id());
-            app_state::handle_nonuser_events(
-                mtm,
-                std::iter::once(EventWrapper::ScaleFactorChanged(
-                    app_state::ScaleFactorChanged {
+            unsafe {
+                app_state::handle_nonuser_events(
+                    std::iter::once(EventWrapper::EventProxy(EventProxy::DpiChangedProxy {
                         window: window.clone(),
                         scale_factor,
-                        suggested_size: size.to_physical(scale_factor),
-                    },
-                ))
-                .chain(std::iter::once(EventWrapper::StaticEvent(
-                    Event::WindowEvent {
-                        window_id,
-                        event: WindowEvent::Resized(size.to_physical(scale_factor)),
-                    },
-                ))),
-            );
+                        suggested_size: size,
+                    }))
+                    .chain(std::iter::once(EventWrapper::StaticEvent(
+                        Event::WindowEvent {
+                            window_id,
+                            event: WindowEvent::Resized(size.to_physical(scale_factor)),
+                        },
+                    ))),
+                );
+            }
         }
 
-        let inner = Inner {
-            window,
-            view_controller,
-            view,
-            gl_or_metal_backed,
-        };
         Ok(Window {
-            inner: MainThreadBound::new(inner, mtm),
+            inner: Inner {
+                window,
+                view_controller,
+                view,
+                gl_or_metal_backed,
+            },
         })
-    }
-
-    pub(crate) fn maybe_queue_on_main(&self, f: impl FnOnce(&Inner) + Send + 'static) {
-        // For now, don't actually do queuing, since it may be less predictable
-        self.maybe_wait_on_main(f)
-    }
-
-    pub(crate) fn maybe_wait_on_main<R: Send>(&self, f: impl FnOnce(&Inner) -> R + Send) -> R {
-        self.inner.get_on_main(|inner, _mtm| f(inner))
     }
 }
 
 // WindowExtIOS
 impl Inner {
+    pub fn ui_window(&self) -> *mut c_void {
+        Id::as_ptr(&self.window) as *mut c_void
+    }
+    pub fn ui_view_controller(&self) -> *mut c_void {
+        Id::as_ptr(&self.view_controller) as *mut c_void
+    }
+    pub fn ui_view(&self) -> *mut c_void {
+        Id::as_ptr(&self.view) as *mut c_void
+    }
+
     pub fn set_scale_factor(&self, scale_factor: f64) {
         assert!(
             dpi::validate_scale_factor(scale_factor),
@@ -503,37 +534,42 @@ impl Inner {
 
     pub fn set_prefers_home_indicator_hidden(&self, hidden: bool) {
         self.view_controller
-            .set_prefers_home_indicator_auto_hidden(hidden);
+            .setPrefersHomeIndicatorAutoHidden(hidden);
     }
 
     pub fn set_preferred_screen_edges_deferring_system_gestures(&self, edges: ScreenEdge) {
+        let edges: UIRectEdge = edges.into();
         self.view_controller
-            .set_preferred_screen_edges_deferring_system_gestures(edges.into());
+            .setPreferredScreenEdgesDeferringSystemGestures(edges);
     }
 
     pub fn set_prefers_status_bar_hidden(&self, hidden: bool) {
-        self.view_controller.set_prefers_status_bar_hidden(hidden);
+        self.view_controller.setPrefersStatusBarHidden(hidden);
     }
 }
 
 impl Inner {
-    fn screen_frame(&self) -> CGRect {
+    // requires main thread
+    unsafe fn screen_frame(&self) -> CGRect {
         self.rect_to_screen_space(self.window.bounds())
     }
 
-    fn rect_to_screen_space(&self, rect: CGRect) -> CGRect {
+    // requires main thread
+    unsafe fn rect_to_screen_space(&self, rect: CGRect) -> CGRect {
         let screen_space = self.window.screen().coordinateSpace();
         self.window
             .convertRect_toCoordinateSpace(rect, &screen_space)
     }
 
-    fn rect_from_screen_space(&self, rect: CGRect) -> CGRect {
+    // requires main thread
+    unsafe fn rect_from_screen_space(&self, rect: CGRect) -> CGRect {
         let screen_space = self.window.screen().coordinateSpace();
         self.window
             .convertRect_fromCoordinateSpace(rect, &screen_space)
     }
 
-    fn safe_area_screen_space(&self) -> CGRect {
+    // requires main thread
+    unsafe fn safe_area_screen_space(&self) -> CGRect {
         let bounds = self.window.bounds();
         if app_state::os_capabilities().safe_area {
             let safe_area = self.window.safeAreaInsets();
@@ -551,7 +587,7 @@ impl Inner {
         } else {
             let screen_frame = self.rect_to_screen_space(bounds);
             let status_bar_frame = {
-                let app = UIApplication::shared(MainThreadMarker::new().unwrap()).expect(
+                let app = UIApplication::shared(MainThreadMarker::new().unwrap_unchecked()).expect(
                     "`Window::get_inner_position` cannot be called before `EventLoop::run` on iOS",
                 );
                 app.statusBarFrame()
@@ -608,8 +644,8 @@ impl From<u64> for WindowId {
 unsafe impl Send for WindowId {}
 unsafe impl Sync for WindowId {}
 
-impl From<&AnyObject> for WindowId {
-    fn from(window: &AnyObject) -> WindowId {
+impl From<&Object> for WindowId {
+    fn from(window: &Object) -> WindowId {
         WindowId {
             window: window as *const _ as _,
         }

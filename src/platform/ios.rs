@@ -1,6 +1,5 @@
 use std::os::raw::c_void;
 
-use icrate::Foundation::MainThreadMarker;
 use objc2::rc::Id;
 
 use crate::{
@@ -23,6 +22,27 @@ impl<T: 'static> EventLoopExtIOS for EventLoop<T> {
 
 /// Additional methods on [`Window`] that are specific to iOS.
 pub trait WindowExtIOS {
+    /// Returns a pointer to the [`UIWindow`] that is used by this window.
+    ///
+    /// The pointer will become invalid when the [`Window`] is destroyed.
+    ///
+    /// [`UIWindow`]: https://developer.apple.com/documentation/uikit/uiwindow?language=objc
+    fn ui_window(&self) -> *mut c_void;
+
+    /// Returns a pointer to the [`UIViewController`] that is used by this window.
+    ///
+    /// The pointer will become invalid when the [`Window`] is destroyed.
+    ///
+    /// [`UIViewController`]: https://developer.apple.com/documentation/uikit/uiviewcontroller?language=objc
+    fn ui_view_controller(&self) -> *mut c_void;
+
+    /// Returns a pointer to the [`UIView`] that is used by this window.
+    ///
+    /// The pointer will become invalid when the [`Window`] is destroyed.
+    ///
+    /// [`UIView`]: https://developer.apple.com/documentation/uikit/uiview?language=objc
+    fn ui_view(&self) -> *mut c_void;
+
     /// Sets the [`contentScaleFactor`] of the underlying [`UIWindow`] to `scale_factor`.
     ///
     /// The default value is device dependent, and it's recommended GLES or Metal applications set
@@ -78,34 +98,44 @@ pub trait WindowExtIOS {
 
 impl WindowExtIOS for Window {
     #[inline]
+    fn ui_window(&self) -> *mut c_void {
+        self.window.ui_window()
+    }
+
+    #[inline]
+    fn ui_view_controller(&self) -> *mut c_void {
+        self.window.ui_view_controller()
+    }
+
+    #[inline]
+    fn ui_view(&self) -> *mut c_void {
+        self.window.ui_view()
+    }
+
+    #[inline]
     fn set_scale_factor(&self, scale_factor: f64) {
-        self.window
-            .maybe_queue_on_main(move |w| w.set_scale_factor(scale_factor))
+        self.window.set_scale_factor(scale_factor)
     }
 
     #[inline]
     fn set_valid_orientations(&self, valid_orientations: ValidOrientations) {
-        self.window
-            .maybe_queue_on_main(move |w| w.set_valid_orientations(valid_orientations))
+        self.window.set_valid_orientations(valid_orientations)
     }
 
     #[inline]
     fn set_prefers_home_indicator_hidden(&self, hidden: bool) {
-        self.window
-            .maybe_queue_on_main(move |w| w.set_prefers_home_indicator_hidden(hidden))
+        self.window.set_prefers_home_indicator_hidden(hidden)
     }
 
     #[inline]
     fn set_preferred_screen_edges_deferring_system_gestures(&self, edges: ScreenEdge) {
-        self.window.maybe_queue_on_main(move |w| {
-            w.set_preferred_screen_edges_deferring_system_gestures(edges)
-        })
+        self.window
+            .set_preferred_screen_edges_deferring_system_gestures(edges)
     }
 
     #[inline]
     fn set_prefers_status_bar_hidden(&self, hidden: bool) {
-        self.window
-            .maybe_queue_on_main(move |w| w.set_prefers_status_bar_hidden(hidden))
+        self.window.set_prefers_status_bar_hidden(hidden)
     }
 }
 
@@ -211,9 +241,7 @@ pub trait MonitorHandleExtIOS {
 impl MonitorHandleExtIOS for MonitorHandle {
     #[inline]
     fn ui_screen(&self) -> *mut c_void {
-        // SAFETY: The marker is only used to get the pointer of the screen
-        let mtm = unsafe { MainThreadMarker::new_unchecked() };
-        Id::as_ptr(self.inner.ui_screen(mtm)) as *mut c_void
+        Id::as_ptr(self.inner.ui_screen()) as *mut c_void
     }
 
     #[inline]
@@ -225,10 +253,9 @@ impl MonitorHandleExtIOS for MonitorHandle {
 }
 
 /// Valid orientations for a particular [`Window`].
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub enum ValidOrientations {
     /// Excludes `PortraitUpsideDown` on iphone
-    #[default]
     LandscapeAndPortrait,
 
     Landscape,
@@ -237,10 +264,17 @@ pub enum ValidOrientations {
     Portrait,
 }
 
+impl Default for ValidOrientations {
+    #[inline]
+    fn default() -> ValidOrientations {
+        ValidOrientations::LandscapeAndPortrait
+    }
+}
+
 /// The device [idiom].
 ///
 /// [idiom]: https://developer.apple.com/documentation/uikit/uidevice/1620037-userinterfaceidiom?language=objc
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Idiom {
     Unspecified,
 
@@ -259,14 +293,14 @@ bitflags! {
     /// The [edges] of a screen.
     ///
     /// [edges]: https://developer.apple.com/documentation/uikit/uirectedge?language=objc
-    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Default)]
     pub struct ScreenEdge: u8 {
         const NONE   = 0;
         const TOP    = 1 << 0;
         const LEFT   = 1 << 1;
         const BOTTOM = 1 << 2;
         const RIGHT  = 1 << 3;
-        const ALL = ScreenEdge::TOP.bits() | ScreenEdge::LEFT.bits()
-            | ScreenEdge::BOTTOM.bits() | ScreenEdge::RIGHT.bits();
+        const ALL = ScreenEdge::TOP.bits | ScreenEdge::LEFT.bits
+            | ScreenEdge::BOTTOM.bits | ScreenEdge::RIGHT.bits;
     }
 }

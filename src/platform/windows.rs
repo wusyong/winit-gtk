@@ -2,11 +2,9 @@ use std::{ffi::c_void, path::Path};
 
 use crate::{
     dpi::PhysicalSize,
-    event::{DeviceId, KeyEvent},
+    event::DeviceId,
     event_loop::EventLoopBuilder,
-    keyboard::Key,
     monitor::MonitorHandle,
-    platform::modifier_supplement::KeyEventExtModifierSupplement,
     platform_impl::WinIcon,
     window::{BadIcon, Icon, Window, WindowBuilder},
 };
@@ -17,6 +15,8 @@ pub type HWND = isize;
 pub type HMENU = isize;
 /// Monitor Handle type used by Win32 API
 pub type HMONITOR = isize;
+/// Instance Handle type used by Win32 API
+pub type HINSTANCE = isize;
 
 /// Additional methods on `EventLoop` that are specific to Windows.
 pub trait EventLoopBuilderExtWindows {
@@ -111,6 +111,13 @@ impl<T> EventLoopBuilderExtWindows for EventLoopBuilder<T> {
 
 /// Additional methods on `Window` that are specific to Windows.
 pub trait WindowExtWindows {
+    /// Returns the HINSTANCE of the window
+    fn hinstance(&self) -> HINSTANCE;
+    /// Returns the native handle that is used by this window.
+    ///
+    /// The pointer will become invalid when the native window was destroyed.
+    fn hwnd(&self) -> HWND;
+
     /// Enables or disables mouse and keyboard input to the specified window.
     ///
     /// A window must be enabled before it can be activated.
@@ -139,6 +146,16 @@ pub trait WindowExtWindows {
 }
 
 impl WindowExtWindows for Window {
+    #[inline]
+    fn hinstance(&self) -> HINSTANCE {
+        self.window.hinstance()
+    }
+
+    #[inline]
+    fn hwnd(&self) -> HWND {
+        self.window.hwnd()
+    }
+
     #[inline]
     fn set_enable(&self, enabled: bool) {
         self.window.set_enable(enabled)
@@ -204,9 +221,6 @@ pub trait WindowBuilderExtWindows {
     /// Whether show or hide the window icon in the taskbar.
     fn with_skip_taskbar(self, skip: bool) -> WindowBuilder;
 
-    /// Customize the window class name.
-    fn with_class_name<S: Into<String>>(self, class_name: S) -> WindowBuilder;
-
     /// Shows or hides the background drop shadow for undecorated windows.
     ///
     /// The shadow is hidden by default.
@@ -248,12 +262,6 @@ impl WindowBuilderExtWindows for WindowBuilder {
     #[inline]
     fn with_skip_taskbar(mut self, skip: bool) -> WindowBuilder {
         self.platform_specific.skip_taskbar = skip;
-        self
-    }
-
-    #[inline]
-    fn with_class_name<S: Into<String>>(mut self, class_name: S) -> WindowBuilder {
-        self.platform_specific.class_name = class_name.into();
         self
     }
 
@@ -334,20 +342,5 @@ impl IconExtWindows for Icon {
     fn from_resource(ordinal: u16, size: Option<PhysicalSize<u32>>) -> Result<Self, BadIcon> {
         let win_icon = WinIcon::from_resource(ordinal, size)?;
         Ok(Icon { inner: win_icon })
-    }
-}
-
-impl KeyEventExtModifierSupplement for KeyEvent {
-    #[inline]
-    fn text_with_all_modifiers(&self) -> Option<&str> {
-        self.platform_specific
-            .text_with_all_modifers
-            .as_ref()
-            .map(|s| s.as_str())
-    }
-
-    #[inline]
-    fn key_without_modifiers(&self) -> Key {
-        self.platform_specific.key_without_modifiers.clone()
     }
 }

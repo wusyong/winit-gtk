@@ -1,69 +1,39 @@
-use std::marker::PhantomData;
-use std::sync::mpsc::{self, Receiver, Sender};
-
-use crate::error::EventLoopError;
-use crate::event::Event;
-use crate::event_loop::{ControlFlow, EventLoopWindowTarget as RootEventLoopWindowTarget};
-
-use super::{backend, device, window};
-
 mod proxy;
-pub(crate) mod runner;
+mod runner;
 mod state;
 mod window_target;
 
-pub use proxy::EventLoopProxy;
-pub use window_target::EventLoopWindowTarget;
+pub use self::proxy::EventLoopProxy;
+pub use self::window_target::EventLoopWindowTarget;
+
+use super::{backend, device, window};
+use crate::event::Event;
+use crate::event_loop::{ControlFlow, EventLoopWindowTarget as RootEventLoopWindowTarget};
+
+use std::marker::PhantomData;
 
 pub struct EventLoop<T: 'static> {
     elw: RootEventLoopWindowTarget<T>,
-    user_event_sender: Sender<T>,
-    user_event_receiver: Receiver<T>,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PlatformSpecificEventLoopAttributes {}
 
 impl<T> EventLoop<T> {
-    pub(crate) fn new(_: &PlatformSpecificEventLoopAttributes) -> Result<Self, EventLoopError> {
-        let (user_event_sender, user_event_receiver) = mpsc::channel();
-        Ok(EventLoop {
+    pub(crate) fn new(_: &PlatformSpecificEventLoopAttributes) -> Self {
+        EventLoop {
             elw: RootEventLoopWindowTarget {
                 p: EventLoopWindowTarget::new(),
                 _marker: PhantomData,
             },
-            user_event_sender,
-            user_event_receiver,
-        })
+        }
     }
 
-    pub fn run<F>(self, mut event_handler: F) -> !
+    pub fn run<F>(self, event_handler: F) -> !
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
+        F: 'static + FnMut(Event<'_, T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
     {
-        let target = RootEventLoopWindowTarget {
-            p: self.elw.p.clone(),
-            _marker: PhantomData,
-        };
-
-        // SAFETY: Don't use `move` to make sure we leak the `event_handler` and `target`.
-        let handler: Box<dyn FnMut(Event<()>, _)> = Box::new(|event, flow| {
-            let event = match event.map_nonuser_event() {
-                Ok(event) => event,
-                Err(Event::UserEvent(())) => Event::UserEvent(
-                    self.user_event_receiver
-                        .try_recv()
-                        .expect("handler woken up without user event"),
-                ),
-                Err(_) => unreachable!(),
-            };
-            event_handler(event, &target, flow)
-        });
-        // SAFETY: The `transmute` is necessary because `run()` requires `'static`. This is safe
-        // because this function will never return and all resources not cleaned up by the point we
-        // `throw` will leak, making this actually `'static`.
-        let handler = unsafe { std::mem::transmute(handler) };
-        self.elw.p.run(handler, false);
+        self.spawn(event_handler);
 
         // Throw an exception to break out of Rust execution and use unreachable to tell the
         // compiler this function won't return, giving it a return type of '!'
@@ -76,32 +46,20 @@ impl<T> EventLoop<T> {
 
     pub fn spawn<F>(self, mut event_handler: F)
     where
-        F: 'static + FnMut(Event<T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
+        F: 'static + FnMut(Event<'_, T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
     {
         let target = RootEventLoopWindowTarget {
             p: self.elw.p.clone(),
             _marker: PhantomData,
         };
 
-        self.elw.p.run(
-            Box::new(move |event, flow| {
-                let event = match event.map_nonuser_event() {
-                    Ok(event) => event,
-                    Err(Event::UserEvent(())) => Event::UserEvent(
-                        self.user_event_receiver
-                            .try_recv()
-                            .expect("handler woken up without user event"),
-                    ),
-                    Err(_) => unreachable!(),
-                };
-                event_handler(event, &target, flow)
-            }),
-            true,
-        );
+        self.elw.p.run(Box::new(move |event, flow| {
+            event_handler(event, &target, flow)
+        }));
     }
 
     pub fn create_proxy(&self) -> EventLoopProxy<T> {
-        EventLoopProxy::new(self.elw.p.runner.clone(), self.user_event_sender.clone())
+        self.elw.p.proxy()
     }
 
     pub fn window_target(&self) -> &RootEventLoopWindowTarget<T> {

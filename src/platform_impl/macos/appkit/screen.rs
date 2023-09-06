@@ -1,8 +1,7 @@
-use icrate::ns_string;
-use icrate::Foundation::{CGFloat, NSArray, NSDictionary, NSNumber, NSObject, NSRect, NSString};
-use objc2::rc::Id;
-use objc2::runtime::AnyObject;
-use objc2::{extern_class, extern_methods, mutability, ClassType};
+use objc2::foundation::{CGFloat, NSArray, NSDictionary, NSNumber, NSObject, NSRect, NSString};
+use objc2::rc::{Id, Shared};
+use objc2::runtime::Object;
+use objc2::{extern_class, extern_methods, msg_send_id, ns_string, ClassType};
 
 extern_class!(
     #[derive(Debug, PartialEq, Eq, Hash)]
@@ -10,7 +9,6 @@ extern_class!(
 
     unsafe impl ClassType for NSScreen {
         type Super = NSObject;
-        type Mutability = mutability::InteriorMutable;
     }
 );
 
@@ -19,21 +17,26 @@ extern_class!(
 extern_methods!(
     unsafe impl NSScreen {
         /// The application object must have been created.
-        #[method_id(mainScreen)]
-        pub fn main() -> Option<Id<Self>>;
+        pub fn main() -> Option<Id<Self, Shared>> {
+            unsafe { msg_send_id![Self::class(), mainScreen] }
+        }
 
         /// The application object must have been created.
-        #[method_id(screens)]
-        pub fn screens() -> Id<NSArray<Self>>;
+        pub fn screens() -> Id<NSArray<Self, Shared>, Shared> {
+            unsafe { msg_send_id![Self::class(), screens] }
+        }
 
-        #[method(frame)]
+        #[sel(frame)]
         pub fn frame(&self) -> NSRect;
 
-        #[method(visibleFrame)]
+        #[sel(visibleFrame)]
         pub fn visibleFrame(&self) -> NSRect;
 
-        #[method_id(deviceDescription)]
-        pub fn deviceDescription(&self) -> Id<NSDictionary<NSDeviceDescriptionKey, AnyObject>>;
+        pub fn deviceDescription(
+            &self,
+        ) -> Id<NSDictionary<NSDeviceDescriptionKey, Object>, Shared> {
+            unsafe { msg_send_id![self, deviceDescription] }
+        }
 
         pub fn display_id(&self) -> u32 {
             let key = ns_string!("NSScreenNumber");
@@ -49,7 +52,7 @@ extern_methods!(
                 let obj = device_description
                     .get(key)
                     .expect("failed getting screen display id from device description");
-                let obj: *const AnyObject = obj;
+                let obj: *const Object = obj;
                 let obj: *const NSNumber = obj.cast();
                 let obj: &NSNumber = unsafe { &*obj };
 
@@ -57,7 +60,7 @@ extern_methods!(
             })
         }
 
-        #[method(backingScaleFactor)]
+        #[sel(backingScaleFactor)]
         pub fn backingScaleFactor(&self) -> CGFloat;
     }
 );

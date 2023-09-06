@@ -14,40 +14,53 @@ use core_foundation::runloop::{
     CFRunLoopObserverCreate, CFRunLoopObserverRef, CFRunLoopSourceContext, CFRunLoopSourceCreate,
     CFRunLoopSourceInvalidate, CFRunLoopSourceRef, CFRunLoopSourceSignal, CFRunLoopWakeUp,
 };
-use icrate::Foundation::{MainThreadMarker, NSString};
+use objc2::foundation::{MainThreadMarker, NSString};
+use objc2::rc::{Id, Shared};
 use objc2::ClassType;
 use raw_window_handle::{RawDisplayHandle, UiKitDisplayHandle};
 
+use super::uikit::{UIApplication, UIApplicationMain, UIDevice, UIScreen};
+use super::view::WinitUIWindow;
+use super::{app_state, monitor, view, MonitorHandle};
 use crate::{
-    error::EventLoopError,
+    dpi::LogicalSize,
     event::Event,
     event_loop::{
-        ControlFlow, DeviceEvents, EventLoopClosed,
-        EventLoopWindowTarget as RootEventLoopWindowTarget,
+        ControlFlow, EventLoopClosed, EventLoopWindowTarget as RootEventLoopWindowTarget,
     },
     platform::ios::Idiom,
 };
 
-use super::uikit::{UIApplication, UIApplicationMain, UIDevice, UIScreen};
-use super::{app_state, monitor, view, MonitorHandle};
-
 #[derive(Debug)]
+pub(crate) enum EventWrapper {
+    StaticEvent(Event<'static, Never>),
+    EventProxy(EventProxy),
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum EventProxy {
+    DpiChangedProxy {
+        window: Id<WinitUIWindow, Shared>,
+        suggested_size: LogicalSize<f64>,
+        scale_factor: f64,
+    },
+}
+
 pub struct EventLoopWindowTarget<T: 'static> {
-    pub(super) mtm: MainThreadMarker,
-    p: PhantomData<T>,
+    receiver: Receiver<T>,
+    sender_to_clone: Sender<T>,
 }
 
 impl<T: 'static> EventLoopWindowTarget<T> {
     pub fn available_monitors(&self) -> VecDeque<MonitorHandle> {
-        monitor::uiscreens(self.mtm)
+        monitor::uiscreens(MainThreadMarker::new().unwrap())
     }
 
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        Some(MonitorHandle::new(UIScreen::main(self.mtm)))
+        Some(MonitorHandle::new(UIScreen::main(
+            MainThreadMarker::new().unwrap(),
+        )))
     }
-
-    #[inline]
-    pub fn listen_device_events(&self, _allowed: DeviceEvents) {}
 
     pub fn raw_display_handle(&self) -> RawDisplayHandle {
         RawDisplayHandle::UiKit(UiKitDisplayHandle::empty())
@@ -55,9 +68,6 @@ impl<T: 'static> EventLoopWindowTarget<T> {
 }
 
 pub struct EventLoop<T: 'static> {
-    mtm: MainThreadMarker,
-    sender: Sender<T>,
-    receiver: Receiver<T>,
     window_target: RootEventLoopWindowTarget<T>,
 }
 
@@ -65,11 +75,8 @@ pub struct EventLoop<T: 'static> {
 pub(crate) struct PlatformSpecificEventLoopAttributes {}
 
 impl<T: 'static> EventLoop<T> {
-    pub(crate) fn new(
-        _: &PlatformSpecificEventLoopAttributes,
-    ) -> Result<EventLoop<T>, EventLoopError> {
-        let mtm = MainThreadMarker::new()
-            .expect("On iOS, `EventLoop` must be created on the main thread");
+    pub(crate) fn new(_: &PlatformSpecificEventLoopAttributes) -> EventLoop<T> {
+        assert_main_thread!("`EventLoop` can only be created on the main thread on iOS");
 
         static mut SINGLETON_INIT: bool = false;
         unsafe {
@@ -81,50 +88,38 @@ impl<T: 'static> EventLoop<T> {
             SINGLETON_INIT = true;
         }
 
-        let (sender, receiver) = mpsc::channel();
+        let (sender_to_clone, receiver) = mpsc::channel();
 
         // this line sets up the main run loop before `UIApplicationMain`
         setup_control_flow_observers();
 
-        Ok(EventLoop {
-            mtm,
-            sender,
-            receiver,
+        EventLoop {
             window_target: RootEventLoopWindowTarget {
                 p: EventLoopWindowTarget {
-                    mtm,
-                    p: PhantomData,
+                    receiver,
+                    sender_to_clone,
                 },
                 _marker: PhantomData,
             },
-        })
+        }
     }
 
     pub fn run<F>(self, event_handler: F) -> !
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
+        F: 'static + FnMut(Event<'_, T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
     {
         unsafe {
-            let application = UIApplication::shared(self.mtm);
+            let application = UIApplication::shared(MainThreadMarker::new().unwrap());
             assert!(
                 application.is_none(),
                 "\
                 `EventLoop` cannot be `run` after a call to `UIApplicationMain` on iOS\n\
                  Note: `EventLoop::run` calls `UIApplicationMain` on iOS",
             );
-
-            let event_handler = std::mem::transmute::<
-                Box<dyn FnMut(Event<T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow)>,
-                Box<EventHandlerCallback<T>>,
-            >(Box::new(event_handler));
-
-            let handler = EventLoopHandler {
+            app_state::will_launch(Box::new(EventLoopHandler {
                 f: event_handler,
-                receiver: self.receiver,
                 event_loop: self.window_target,
-            };
-
-            app_state::will_launch(self.mtm, Box::new(handler));
+            }));
 
             // Ensure application delegate is initialized
             view::WinitApplicationDelegate::class();
@@ -140,7 +135,7 @@ impl<T: 'static> EventLoop<T> {
     }
 
     pub fn create_proxy(&self) -> EventLoopProxy<T> {
-        EventLoopProxy::new(self.sender.clone())
+        EventLoopProxy::new(self.window_target.p.sender_to_clone.clone())
     }
 
     pub fn window_target(&self) -> &RootEventLoopWindowTarget<T> {
@@ -151,7 +146,9 @@ impl<T: 'static> EventLoop<T> {
 // EventLoopExtIOS
 impl<T: 'static> EventLoop<T> {
     pub fn idiom(&self) -> Idiom {
-        UIDevice::current(self.mtm).userInterfaceIdiom().into()
+        UIDevice::current(MainThreadMarker::new().unwrap())
+            .userInterfaceIdiom()
+            .into()
     }
 }
 
@@ -229,20 +226,21 @@ fn setup_control_flow_observers() {
             activity: CFRunLoopActivity,
             _: *mut c_void,
         ) {
-            let mtm = MainThreadMarker::new().unwrap();
-            #[allow(non_upper_case_globals)]
-            match activity {
-                kCFRunLoopAfterWaiting => app_state::handle_wakeup_transition(mtm),
-                _ => unreachable!(),
+            unsafe {
+                #[allow(non_upper_case_globals)]
+                match activity {
+                    kCFRunLoopAfterWaiting => app_state::handle_wakeup_transition(),
+                    _ => unreachable!(),
+                }
             }
         }
 
         // Core Animation registers its `CFRunLoopObserver` that performs drawing operations in
         // `CA::Transaction::ensure_implicit` with a priority of `0x1e8480`. We set the main_end
-        // priority to be 0, in order to send AboutToWait before RedrawRequested. This value was
+        // priority to be 0, in order to send MainEventsCleared before RedrawRequested. This value was
         // chosen conservatively to guard against apple using different priorities for their redraw
         // observers in different OS's or on different devices. If it so happens that it's too
-        // conservative, the main symptom would be non-redraw events coming in after `AboutToWait`.
+        // conservative, the main symptom would be non-redraw events coming in after `MainEventsCleared`.
         //
         // The value of `0x1e8480` was determined by inspecting stack traces and the associated
         // registers for every `CFRunLoopAddObserver` call on an iPad Air 2 running iOS 11.4.
@@ -253,12 +251,13 @@ fn setup_control_flow_observers() {
             activity: CFRunLoopActivity,
             _: *mut c_void,
         ) {
-            let mtm = MainThreadMarker::new().unwrap();
-            #[allow(non_upper_case_globals)]
-            match activity {
-                kCFRunLoopBeforeWaiting => app_state::handle_main_events_cleared(mtm),
-                kCFRunLoopExit => unimplemented!(), // not expected to ever happen
-                _ => unreachable!(),
+            unsafe {
+                #[allow(non_upper_case_globals)]
+                match activity {
+                    kCFRunLoopBeforeWaiting => app_state::handle_main_events_cleared(),
+                    kCFRunLoopExit => unimplemented!(), // not expected to ever happen
+                    _ => unreachable!(),
+                }
             }
         }
 
@@ -268,12 +267,13 @@ fn setup_control_flow_observers() {
             activity: CFRunLoopActivity,
             _: *mut c_void,
         ) {
-            let mtm = MainThreadMarker::new().unwrap();
-            #[allow(non_upper_case_globals)]
-            match activity {
-                kCFRunLoopBeforeWaiting => app_state::handle_events_cleared(mtm),
-                kCFRunLoopExit => unimplemented!(), // not expected to ever happen
-                _ => unreachable!(),
+            unsafe {
+                #[allow(non_upper_case_globals)]
+                match activity {
+                    kCFRunLoopBeforeWaiting => app_state::handle_events_cleared(),
+                    kCFRunLoopExit => unimplemented!(), // not expected to ever happen
+                    _ => unreachable!(),
+                }
             }
         }
 
@@ -314,21 +314,17 @@ fn setup_control_flow_observers() {
 #[derive(Debug)]
 pub enum Never {}
 
-type EventHandlerCallback<T> =
-    dyn FnMut(Event<T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow) + 'static;
-
 pub trait EventHandler: Debug {
-    fn handle_nonuser_event(&mut self, event: Event<Never>, control_flow: &mut ControlFlow);
+    fn handle_nonuser_event(&mut self, event: Event<'_, Never>, control_flow: &mut ControlFlow);
     fn handle_user_events(&mut self, control_flow: &mut ControlFlow);
 }
 
-struct EventLoopHandler<T: 'static> {
-    f: Box<EventHandlerCallback<T>>,
-    receiver: Receiver<T>,
+struct EventLoopHandler<F, T: 'static> {
+    f: F,
     event_loop: RootEventLoopWindowTarget<T>,
 }
 
-impl<T: 'static> Debug for EventLoopHandler<T> {
+impl<F, T: 'static> Debug for EventLoopHandler<F, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EventLoopHandler")
             .field("event_loop", &self.event_loop)
@@ -336,8 +332,12 @@ impl<T: 'static> Debug for EventLoopHandler<T> {
     }
 }
 
-impl<T: 'static> EventHandler for EventLoopHandler<T> {
-    fn handle_nonuser_event(&mut self, event: Event<Never>, control_flow: &mut ControlFlow) {
+impl<F, T> EventHandler for EventLoopHandler<F, T>
+where
+    F: 'static + FnMut(Event<'_, T>, &RootEventLoopWindowTarget<T>, &mut ControlFlow),
+    T: 'static,
+{
+    fn handle_nonuser_event(&mut self, event: Event<'_, Never>, control_flow: &mut ControlFlow) {
         (self.f)(
             event.map_nonuser_event().unwrap(),
             &self.event_loop,
@@ -346,7 +346,7 @@ impl<T: 'static> EventHandler for EventLoopHandler<T> {
     }
 
     fn handle_user_events(&mut self, control_flow: &mut ControlFlow) {
-        for event in self.receiver.try_iter() {
+        for event in self.event_loop.p.receiver.try_iter() {
             (self.f)(Event::UserEvent(event), &self.event_loop, control_flow);
         }
     }

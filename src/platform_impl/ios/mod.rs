@@ -48,15 +48,26 @@
 //!
 //!  - applicationDidBecomeActive is Resumed
 //!  - applicationWillResignActive is Suspended
-//!  - applicationWillTerminate is LoopExiting
+//!  - applicationWillTerminate is LoopDestroyed
 //!
-//! Keep in mind that after LoopExiting event is received every attempt to draw with
+//! Keep in mind that after LoopDestroyed event is received every attempt to draw with
 //! opengl will result in segfault.
 //!
-//! Also note that app may not receive the LoopExiting event if suspended; it might be SIGKILL'ed.
+//! Also note that app may not receive the LoopDestroyed event if suspended; it might be SIGKILL'ed.
 
 #![cfg(ios_platform)]
 #![allow(clippy::let_unit_value)]
+
+// TODO: (mtak-) UIKit requires main thread for virtually all function/method calls. This could be
+// worked around in the future by using GCD (grand central dispatch) and/or caching of values like
+// window size/position.
+macro_rules! assert_main_thread {
+    ($($t:tt)*) => {
+        if !::objc2::foundation::is_main_thread() {
+            panic!($($t)*);
+        }
+    };
+}
 
 mod app_state;
 mod event_loop;
@@ -78,7 +89,7 @@ pub(crate) use self::{
 
 use self::uikit::UIScreen;
 pub(crate) use crate::icon::NoIcon as PlatformIcon;
-pub(crate) use crate::platform_impl::Fullscreen;
+pub(self) use crate::platform_impl::Fullscreen;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DeviceId {
@@ -95,9 +106,6 @@ impl DeviceId {
 
 unsafe impl Send for DeviceId {}
 unsafe impl Sync for DeviceId {}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct KeyEventExtra {}
 
 #[derive(Debug)]
 pub enum OsError {}

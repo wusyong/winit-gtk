@@ -1,22 +1,15 @@
 #![cfg(free_unix)]
 
-use std::{fmt, time::Duration};
-
-use smol_str::SmolStr;
+use std::fmt;
 
 use crate::{
-    dpi::Size,
-    event::{Event, KeyEvent},
+    event::Event,
     event_loop::{ControlFlow, EventLoopWindowTarget as RootELW},
-    keyboard::{Key, KeyCode},
-    platform::{modifier_supplement::KeyEventExtModifierSupplement, scancode::KeyCodeExtScancode},
-    window::ActivationToken,
 };
 
 pub(crate) use crate::icon::RgbaIcon as PlatformIcon;
-pub(crate) use crate::platform_impl::Fullscreen;
+pub(self) use crate::platform_impl::Fullscreen;
 
-pub mod common;
 mod eventloop;
 mod monitor;
 mod window;
@@ -54,38 +47,11 @@ impl ApplicationName {
 #[derive(Clone)]
 pub struct PlatformSpecificWindowBuilderAttributes {
     pub name: Option<ApplicationName>,
-    pub activation_token: Option<ActivationToken>,
-    #[cfg(x11_platform)]
-    pub x11: X11WindowBuilderAttributes,
-}
-
-#[derive(Clone)]
-#[cfg(x11_platform)]
-pub struct X11WindowBuilderAttributes {
-    pub visual_id: Option<x11rb::protocol::xproto::Visualid>,
-    pub screen_id: Option<i32>,
-    pub base_size: Option<Size>,
-    pub override_redirect: bool,
-    // TODO pub x11_window_types: Vec<XWindowType>,
-    /// The parent window to embed this window into.
-    pub embed_window: Option<x11rb::protocol::xproto::Window>,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
     fn default() -> Self {
-        Self {
-            name: None,
-            activation_token: None,
-            #[cfg(x11_platform)]
-            x11: X11WindowBuilderAttributes {
-                visual_id: None,
-                screen_id: None,
-                base_size: None,
-                override_redirect: false,
-                // x11_window_types: vec![XWindowType::Normal],
-                embed_window: None,
-            },
-        }
+        Self { name: None }
     }
 }
 
@@ -132,44 +98,13 @@ impl DeviceId {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct KeyEventExtra {
-    pub key_without_modifiers: Key,
-    pub text_with_all_modifiers: Option<SmolStr>,
-}
-
-impl KeyEventExtModifierSupplement for KeyEvent {
-    #[inline]
-    fn text_with_all_modifiers(&self) -> Option<&str> {
-        self.platform_specific
-            .text_with_all_modifiers
-            .as_ref()
-            .map(|s| s.as_str())
-    }
-
-    #[inline]
-    fn key_without_modifiers(&self) -> Key {
-        self.platform_specific.key_without_modifiers.clone()
-    }
-}
-
-impl KeyCodeExtScancode for KeyCode {
-    fn from_scancode(scancode: u32) -> KeyCode {
-        common::keymap::scancode_to_keycode(scancode)
-    }
-
-    fn to_scancode(self) -> Option<u32> {
-        common::keymap::keycode_to_scancode(self)
-    }
-}
-
 fn sticky_exit_callback<T, F>(
-    evt: Event<T>,
+    evt: Event<'_, T>,
     target: &RootELW<T>,
     control_flow: &mut ControlFlow,
     callback: &mut F,
 ) where
-    F: FnMut(Event<T>, &RootELW<T>, &mut ControlFlow),
+    F: FnMut(Event<'_, T>, &RootELW<T>, &mut ControlFlow),
 {
     // make ControlFlow::ExitWithCode sticky by providing a dummy
     // control flow reference if it is already ExitWithCode.
@@ -180,18 +115,11 @@ fn sticky_exit_callback<T, F>(
     }
 }
 
-/// Returns the minimum `Option<Duration>`, taking into account that `None`
-/// equates to an infinite timeout, not a zero timeout (so can't just use
-/// `Option::min`)
-fn min_timeout(a: Option<Duration>, b: Option<Duration>) -> Option<Duration> {
-    a.map_or(b, |a_timeout| {
-        b.map_or(Some(a_timeout), |b_timeout| Some(a_timeout.min(b_timeout)))
-    })
-}
-
 #[cfg(target_os = "linux")]
 fn is_main_thread() -> bool {
-    rustix::thread::gettid() == rustix::process::getpid()
+    use libc::{c_long, getpid, syscall, SYS_gettid};
+
+    unsafe { syscall(SYS_gettid) == getpid() as c_long }
 }
 
 #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd"))]
