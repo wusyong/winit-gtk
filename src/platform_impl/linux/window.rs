@@ -5,13 +5,16 @@ use std::{
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
-use gdk::{WindowState, WindowEdge};
-use glib::{translate::ToGlibPtr, Cast};
+use gdk::{prelude::DisplayExtManual, WindowEdge, WindowState};
+use glib::{translate::ToGlibPtr, Cast, ObjectType};
 use gtk::{
     traits::{ApplicationWindowExt, ContainerExt, GtkWindowExt, SettingsExt, WidgetExt},
     Inhibit, Settings,
 };
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+use raw_window_handle::{
+    RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
+    XlibDisplayHandle, XlibWindowHandle,
+};
 
 use crate::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size},
@@ -533,7 +536,8 @@ impl Window {
 
     #[inline]
     pub(crate) fn fullscreen(&self) -> Option<Fullscreen> {
-        todo!()
+        // todo!()
+        None
     }
 
     #[inline]
@@ -622,14 +626,55 @@ impl Window {
         todo!()
     }
 
+    fn is_wayland(&self) -> bool {
+        self.window.display().backend().is_wayland()
+    }
+
     #[inline]
     pub fn raw_window_handle(&self) -> RawWindowHandle {
-        todo!()
+        if self.is_wayland() {
+            let mut window_handle = WaylandWindowHandle::empty();
+            if let Some(window) = self.window.window() {
+                window_handle.surface = unsafe {
+                    gdk_wayland_sys::gdk_wayland_window_get_wl_surface(window.as_ptr() as *mut _)
+                };
+            }
+
+            RawWindowHandle::Wayland(window_handle)
+        } else {
+            let mut window_handle = XlibWindowHandle::empty();
+            unsafe {
+                if let Some(window) = self.window.window() {
+                    window_handle.window =
+                        gdk_x11_sys::gdk_x11_window_get_xid(window.as_ptr() as *mut _);
+                }
+            }
+            RawWindowHandle::Xlib(window_handle)
+        }
     }
 
     #[inline]
     pub fn raw_display_handle(&self) -> RawDisplayHandle {
-        todo!()
+        if self.is_wayland() {
+            let mut display_handle = WaylandDisplayHandle::empty();
+            display_handle.display = unsafe {
+                gdk_wayland_sys::gdk_wayland_display_get_wl_display(
+                    self.window.display().as_ptr() as *mut _
+                )
+            };
+            RawDisplayHandle::Wayland(display_handle)
+        } else {
+            let mut display_handle = XlibDisplayHandle::empty();
+            unsafe {
+                if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+                    let display = (xlib.XOpenDisplay)(std::ptr::null());
+                    display_handle.display = display as _;
+                    display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+                }
+            }
+
+            RawDisplayHandle::Xlib(display_handle)
+        }
     }
 
     #[inline]
@@ -656,45 +701,44 @@ impl Window {
     }
 }
 
-
 /// A constant used to determine how much inside the window, the resize handler should appear (only used in Linux(gtk) and Windows).
 /// You probably need to scale it by the scale_factor of the window.
 pub const BORDERLESS_RESIZE_INSET: i32 = 5;
 
 pub fn hit_test(window: &gdk::Window, cx: f64, cy: f64) -> WindowEdge {
-  let (left, top) = window.position();
-  let (w, h) = (window.width(), window.height());
-  let (right, bottom) = (left + w, top + h);
-  let (cx, cy) = (cx as i32, cy as i32);
+    let (left, top) = window.position();
+    let (w, h) = (window.width(), window.height());
+    let (right, bottom) = (left + w, top + h);
+    let (cx, cy) = (cx as i32, cy as i32);
 
-  const LEFT: i32 = 0b0001;
-  const RIGHT: i32 = 0b0010;
-  const TOP: i32 = 0b0100;
-  const BOTTOM: i32 = 0b1000;
-  const TOPLEFT: i32 = TOP | LEFT;
-  const TOPRIGHT: i32 = TOP | RIGHT;
-  const BOTTOMLEFT: i32 = BOTTOM | LEFT;
-  const BOTTOMRIGHT: i32 = BOTTOM | RIGHT;
+    const LEFT: i32 = 0b0001;
+    const RIGHT: i32 = 0b0010;
+    const TOP: i32 = 0b0100;
+    const BOTTOM: i32 = 0b1000;
+    const TOPLEFT: i32 = TOP | LEFT;
+    const TOPRIGHT: i32 = TOP | RIGHT;
+    const BOTTOMLEFT: i32 = BOTTOM | LEFT;
+    const BOTTOMRIGHT: i32 = BOTTOM | RIGHT;
 
-  let inset = BORDERLESS_RESIZE_INSET * window.scale_factor();
-  #[rustfmt::skip]
+    let inset = BORDERLESS_RESIZE_INSET * window.scale_factor();
+    #[rustfmt::skip]
   let result =
       (LEFT * (if cx < (left + inset) { 1 } else { 0 }))
     | (RIGHT * (if cx >= (right - inset) { 1 } else { 0 }))
     | (TOP * (if cy < (top + inset) { 1 } else { 0 }))
     | (BOTTOM * (if cy >= (bottom - inset) { 1 } else { 0 }));
 
-  match result {
-    LEFT => WindowEdge::West,
-    TOP => WindowEdge::North,
-    RIGHT => WindowEdge::East,
-    BOTTOM => WindowEdge::South,
-    TOPLEFT => WindowEdge::NorthWest,
-    TOPRIGHT => WindowEdge::NorthEast,
-    BOTTOMLEFT => WindowEdge::SouthWest,
-    BOTTOMRIGHT => WindowEdge::SouthEast,
-    // we return `WindowEdge::__Unknown` to be ignored later.
-    // we must return 8 or bigger, otherwise it will be the same as one of the other 7 variants of `WindowEdge` enum.
-    _ => WindowEdge::__Unknown(8),
-  }
+    match result {
+        LEFT => WindowEdge::West,
+        TOP => WindowEdge::North,
+        RIGHT => WindowEdge::East,
+        BOTTOM => WindowEdge::South,
+        TOPLEFT => WindowEdge::NorthWest,
+        TOPRIGHT => WindowEdge::NorthEast,
+        BOTTOMLEFT => WindowEdge::SouthWest,
+        BOTTOMRIGHT => WindowEdge::SouthEast,
+        // we return `WindowEdge::__Unknown` to be ignored later.
+        // we must return 8 or bigger, otherwise it will be the same as one of the other 7 variants of `WindowEdge` enum.
+        _ => WindowEdge::__Unknown(8),
+    }
 }
