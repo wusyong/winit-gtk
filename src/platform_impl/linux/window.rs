@@ -21,13 +21,13 @@ use crate::{
     error::{ExternalError, NotSupportedError, OsError as RootOsError},
     platform_impl::WindowId,
     window::{
-        CursorGrabMode, CursorIcon, Fullscreen as RootFullscreen, Icon, ImePurpose,
-        ResizeDirection, Theme, UserAttentionType, WindowAttributes, WindowButtons, WindowLevel,
+        CursorGrabMode, CursorIcon, Icon, ImePurpose, ResizeDirection, Theme, UserAttentionType,
+        WindowAttributes, WindowButtons, WindowLevel,
     },
 };
 
 use super::{
-    EventLoopWindowTarget, Fullscreen, MonitorHandle, PlatformSpecificWindowBuilderAttributes,
+    util, EventLoopWindowTarget, Fullscreen, MonitorHandle, PlatformSpecificWindowBuilderAttributes,
 };
 
 // Currently GTK doesn't provide feature for detect theme, so we need to check theme manually.
@@ -38,11 +38,11 @@ pub(crate) enum WindowRequest {
     Title(String),
     Position((i32, i32)),
     Size((i32, i32)),
-    // SizeConstraints(WindowSizeConstraints),
+    SizeConstraints(Option<Size>, Option<Size>),
     Visible(bool),
     Focus,
     Resizable(bool),
-    Closable(bool),
+    // Closable(bool),
     Minimized(bool),
     Maximized(bool),
     DragWindow,
@@ -50,17 +50,17 @@ pub(crate) enum WindowRequest {
     Decorations(bool),
     AlwaysOnBottom(bool),
     AlwaysOnTop(bool),
-    // WindowIcon(Option<Icon>),
-    // UserAttention(Option<UserAttentionType>),
-    SetSkipTaskbar(bool),
-    // CursorIcon(Option<CursorIcon>),
+    WindowIcon(Option<Icon>),
+    UserAttention(Option<UserAttentionType>),
+    // SetSkipTaskbar(bool),
+    CursorIcon(Option<CursorIcon>),
     CursorPosition((i32, i32)),
     CursorIgnoreEvents(bool),
     WireUpEvents {
         transparent: bool,
         cursor_moved: bool,
     },
-    SetVisibleOnAllWorkspaces(bool),
+    // SetVisibleOnAllWorkspaces(bool),
     // ProgressBarState(ProgressBarState),
 }
 
@@ -77,8 +77,9 @@ pub struct Window {
     size: Rc<(AtomicI32, AtomicI32)>,
     maximized: Rc<AtomicBool>,
     minimized: Rc<AtomicBool>,
-    fullscreen: RefCell<Option<RootFullscreen>>,
-    // inner_size_constraints: RefCell<WindowSizeConstraints>,
+    fullscreen: RefCell<Option<Fullscreen>>,
+    min_size: RefCell<Option<Size>>,
+    max_size: RefCell<Option<Size>>,
     /// Draw event Sender
     draw_tx: crossbeam_channel::Sender<WindowId>,
 }
@@ -114,8 +115,8 @@ impl Window {
         window.set_resizable(attribs.resizable);
         // window.set_deletable(attribs.closable);
 
-        // TODO Set Min/Max Size
-        // util::set_size_constraints(&window, attribs.inner_size_constraints);
+        // Set Min/Max Size
+        util::set_size_constraints(&window, attribs.min_inner_size, attribs.max_inner_size);
 
         // Set Position
         if let Some(position) = attribs.position {
@@ -159,10 +160,10 @@ impl Window {
 
         // Rest attributes
         window.set_title(&attribs.title);
-        if let Some(RootFullscreen::Borderless(m)) = &attribs.fullscreen {
+        let fullscreen = attribs.fullscreen.map(|f| f.into());
+        if let Some(Fullscreen::Borderless(m)) = &fullscreen {
             if let Some(monitor) = m {
                 let display = window.display();
-                let monitor = &monitor.inner;
                 let monitors = display.n_monitors();
                 for i in 0..monitors {
                     let m = display.monitor(i).unwrap();
@@ -320,22 +321,15 @@ impl Window {
             size,
             maximized,
             minimized,
-            fullscreen: RefCell::new(attribs.fullscreen),
-            // inner_size_constraints: RefCell::new(attribs.inner_size_constraints),
+            fullscreen: RefCell::new(fullscreen),
+            min_size: RefCell::new(attribs.min_inner_size),
+            max_size: RefCell::new(attribs.min_inner_size),
         };
 
         // TODO
         // win.set_skip_taskbar(pl_attribs.skip_taskbar);
 
         Ok(win)
-    }
-
-    pub(crate) fn maybe_queue_on_main(&self, f: impl FnOnce(&Self) + Send + 'static) {
-        f(self)
-    }
-
-    pub(crate) fn maybe_wait_on_main<R: Send>(&self, f: impl FnOnce(&Self) -> R + Send) -> R {
-        f(self)
     }
 
     #[inline]
@@ -434,14 +428,27 @@ impl Window {
         }
     }
 
+    fn set_size_constraints(&self) {
+        if let Err(e) = self.window_requests_tx.send((
+            self.window_id,
+            WindowRequest::SizeConstraints(*self.min_size.borrow(), *self.max_size.borrow()),
+        )) {
+            log::warn!("Fail to send size constraint request: {}", e);
+        }
+    }
+
     #[inline]
     pub fn set_min_inner_size(&self, dimensions: Option<Size>) {
-        todo!()
+        let mut min_size = self.min_size.borrow_mut();
+        *min_size = dimensions;
+        self.set_size_constraints()
     }
 
     #[inline]
     pub fn set_max_inner_size(&self, dimensions: Option<Size>) {
-        todo!()
+        let mut max_size = self.min_size.borrow_mut();
+        *max_size = dimensions;
+        self.set_size_constraints()
     }
 
     #[inline]
@@ -456,12 +463,17 @@ impl Window {
 
     #[inline]
     pub fn set_resizable(&self, resizable: bool) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::Resizable(resizable)))
+        {
+            log::warn!("Fail to send resizable request: {}", e);
+        }
     }
 
     #[inline]
     pub fn is_resizable(&self) -> bool {
-        todo!()
+        self.window.is_resizable()
     }
 
     #[inline]
@@ -476,7 +488,12 @@ impl Window {
 
     #[inline]
     pub fn set_cursor_icon(&self, cursor: CursorIcon) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::CursorIcon(Some(cursor))))
+        {
+            log::warn!("Fail to send cursor icon request: {}", e);
+        }
     }
 
     #[inline]
@@ -486,12 +503,28 @@ impl Window {
 
     #[inline]
     pub fn set_cursor_visible(&self, visible: bool) {
-        todo!()
+        let cursor = if visible {
+            Some(CursorIcon::Default)
+        } else {
+            None
+        };
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::CursorIcon(cursor)))
+        {
+            log::warn!("Fail to send cursor visibility request: {}", e);
+        }
     }
 
     #[inline]
     pub fn drag_window(&self) -> Result<(), ExternalError> {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::DragWindow))
+        {
+            log::warn!("Fail to send drag window request: {}", e);
+        }
+        Ok(())
     }
 
     #[inline]
@@ -511,58 +544,112 @@ impl Window {
 
     #[inline]
     pub fn set_cursor_position(&self, position: Position) -> Result<(), ExternalError> {
-        todo!()
+        let inner_pos = self.inner_position().unwrap_or_default();
+        let (x, y): (i32, i32) = position.to_logical::<i32>(self.scale_factor()).into();
+
+        if let Err(e) = self.window_requests_tx.send((
+            self.window_id,
+            WindowRequest::CursorPosition((x + inner_pos.x, y + inner_pos.y)),
+        )) {
+            log::warn!("Fail to send cursor position request: {}", e);
+        }
+
+        Ok(())
     }
 
     #[inline]
     pub fn set_maximized(&self, maximized: bool) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::Maximized(maximized)))
+        {
+            log::warn!("Fail to send maximized request: {}", e);
+        }
     }
 
     #[inline]
     pub fn is_maximized(&self) -> bool {
-        todo!()
+        self.maximized.load(Ordering::Acquire)
     }
 
     #[inline]
     pub fn set_minimized(&self, minimized: bool) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::Minimized(minimized)))
+        {
+            log::warn!("Fail to send minimized request: {}", e);
+        }
     }
 
     #[inline]
     pub fn is_minimized(&self) -> Option<bool> {
-        todo!()
+        Some(self.minimized.load(Ordering::Acquire))
     }
 
     #[inline]
     pub(crate) fn fullscreen(&self) -> Option<Fullscreen> {
-        // todo!()
-        None
+        self.fullscreen.borrow().clone()
     }
 
     #[inline]
     pub(crate) fn set_fullscreen(&self, monitor: Option<Fullscreen>) {
-        todo!()
+        let fullscreen = monitor.map(|f| f.into());
+        self.fullscreen.replace(fullscreen.clone());
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::Fullscreen(fullscreen)))
+        {
+            log::warn!("Fail to send fullscreen request: {}", e);
+        }
     }
 
     #[inline]
     pub fn set_decorations(&self, decorations: bool) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::Decorations(decorations)))
+        {
+            log::warn!("Fail to send decorations request: {}", e);
+        }
     }
 
     #[inline]
     pub fn is_decorated(&self) -> bool {
-        todo!()
+        self.window.is_decorated()
     }
 
     #[inline]
     pub fn set_window_level(&self, level: WindowLevel) {
-        todo!()
+        match level {
+            WindowLevel::AlwaysOnBottom => {
+                if let Err(e) = self
+                    .window_requests_tx
+                    .send((self.window_id, WindowRequest::AlwaysOnTop(true)))
+                {
+                    log::warn!("Fail to send always on top request: {}", e);
+                }
+            }
+            WindowLevel::Normal => (),
+            WindowLevel::AlwaysOnTop => {
+                if let Err(e) = self
+                    .window_requests_tx
+                    .send((self.window_id, WindowRequest::AlwaysOnBottom(true)))
+                {
+                    log::warn!("Fail to send always on bottom request: {}", e);
+                }
+            }
+        }
     }
 
     #[inline]
     pub fn set_window_icon(&self, window_icon: Option<Icon>) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::WindowIcon(window_icon)))
+        {
+            log::warn!("Fail to send window icon request: {}", e);
+        }
     }
 
     #[inline]
@@ -592,11 +679,23 @@ impl Window {
 
     #[inline]
     pub fn focus_window(&self) {
-        todo!()
+        if !self.minimized.load(Ordering::Acquire) && self.window.get_visible() {
+            if let Err(e) = self
+                .window_requests_tx
+                .send((self.window_id, WindowRequest::Focus))
+            {
+                log::warn!("Fail to send visible request: {}", e);
+            }
+        }
     }
 
     pub fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::UserAttention(request_type)))
+        {
+            log::warn!("Fail to send user attention request: {}", e);
+        }
     }
 
     #[inline]
@@ -684,7 +783,15 @@ impl Window {
 
     #[inline]
     pub fn theme(&self) -> Option<Theme> {
-        todo!()
+        if let Some(settings) = Settings::default() {
+            let theme_name = settings.gtk_theme_name().map(|s| s.as_str().to_owned());
+            if let Some(theme) = theme_name {
+                if GTK_THEME_SUFFIX_LIST.iter().any(|t| theme.ends_with(t)) {
+                    return Some(Theme::Dark);
+                }
+            }
+        }
+        return Some(Theme::Light);
     }
 
     pub fn set_content_protected(&self, protected: bool) {
@@ -693,11 +800,14 @@ impl Window {
 
     #[inline]
     pub fn has_focus(&self) -> bool {
-        todo!()
+        self.window.is_active()
     }
 
     pub fn title(&self) -> String {
-        todo!()
+        self.window
+            .title()
+            .map(|t| t.as_str().to_string())
+            .unwrap_or_default()
     }
 }
 

@@ -9,7 +9,7 @@ use std::{
 use crossbeam_channel::SendError;
 use gdk::{
     prelude::{ApplicationExt, DisplayExtManual},
-    Cursor, EventMask, WindowEdge,
+    Cursor, CursorType, EventMask, WindowEdge,
 };
 use gio::Cancellable;
 use glib::{Continue, MainContext, ObjectType, Priority};
@@ -26,13 +26,14 @@ use crate::{
     event_loop::{
         ControlFlow, DeviceEventFilter, EventLoopClosed, EventLoopWindowTarget as RootELW,
     },
-    window::{Fullscreen as RootFullscreen, WindowId as RootWindowId},
+    window::{CursorIcon, WindowId as RootWindowId},
 };
 
 use super::{
     monitor::MonitorHandle,
+    util,
     window::{hit_test, WindowRequest},
-    PlatformSpecificEventLoopAttributes, WindowId,
+    Fullscreen, PlatformSpecificEventLoopAttributes, WindowId,
 };
 
 pub struct EventLoop<T: 'static> {
@@ -97,8 +98,6 @@ impl<T: 'static> EventLoop<T> {
 
         // TODO: Spawn x11/wayland thread to receive Device events.
 
-        // TODO: Handle shit tons of window events.
-
         // Window Request
         window_requests_rx.attach(Some(&context), move |(id, request)| {
             if let Some(window) = app_.window_by_id(id.0 as u32) {
@@ -106,9 +105,9 @@ impl<T: 'static> EventLoop<T> {
                     WindowRequest::Title(title) => window.set_title(&title),
                     WindowRequest::Position((x, y)) => window.move_(x, y),
                     WindowRequest::Size((w, h)) => window.resize(w, h),
-                    // WindowRequest::SizeConstraints(constraints) => {
-                    //     util::set_size_constraints(&window, constraints);
-                    // }
+                    WindowRequest::SizeConstraints(min, max) => {
+                        util::set_size_constraints(&window, min, max);
+                    }
                     WindowRequest::Visible(visible) => {
                         if visible {
                             window.show_all();
@@ -120,7 +119,7 @@ impl<T: 'static> EventLoop<T> {
                         window.present_with_time(gdk_sys::GDK_CURRENT_TIME as _);
                     }
                     WindowRequest::Resizable(resizable) => window.set_resizable(resizable),
-                    WindowRequest::Closable(closable) => window.set_deletable(closable),
+                    // WindowRequest::Closable(closable) => window.set_deletable(closable),
                     WindowRequest::Minimized(minimized) => {
                         if minimized {
                             window.iconify();
@@ -145,27 +144,26 @@ impl<T: 'static> EventLoop<T> {
                             window.begin_move_drag(1, x, y, 0);
                         }
                     }
-                    // WindowRequest::Fullscreen(fullscreen) => match fullscreen {
-                    //     Some(f) => {
-                    //         if let RootFullscreen::Borderless(m) = f {
-                    //             if let Some(monitor) = m {
-                    //                 let display = window.display();
-                    //                 let monitor = monitor.inner;
-                    //                 let monitors = display.n_monitors();
-                    //                 for i in 0..monitors {
-                    //                     let m = display.monitor(i).unwrap();
-                    //                     if m == monitor.monitor {
-                    //                         let screen = display.default_screen();
-                    //                         window.fullscreen_on_monitor(&screen, i);
-                    //                     }
-                    //                 }
-                    //             } else {
-                    //                 window.fullscreen();
-                    //             }
-                    //         }
-                    //     }
-                    //     None => window.unfullscreen(),
-                    // },
+                    WindowRequest::Fullscreen(fullscreen) => match fullscreen {
+                        Some(f) => {
+                            if let Some(Fullscreen::Borderless(m)) = f.into() {
+                                if let Some(monitor) = m {
+                                    let display = window.display();
+                                    let monitors = display.n_monitors();
+                                    for i in 0..monitors {
+                                        let m = display.monitor(i).unwrap();
+                                        if m == monitor.monitor {
+                                            let screen = display.default_screen();
+                                            window.fullscreen_on_monitor(&screen, i);
+                                        }
+                                    }
+                                } else {
+                                    window.fullscreen();
+                                }
+                            }
+                        }
+                        None => window.unfullscreen(),
+                    },
                     WindowRequest::Decorations(decorations) => window.set_decorated(decorations),
                     WindowRequest::AlwaysOnBottom(always_on_bottom) => {
                         window.set_keep_below(always_on_bottom)
@@ -173,78 +171,78 @@ impl<T: 'static> EventLoop<T> {
                     WindowRequest::AlwaysOnTop(always_on_top) => {
                         window.set_keep_above(always_on_top)
                     }
-                    // WindowRequest::WindowIcon(window_icon) => {
-                    //     if let Some(icon) = window_icon {
-                    //         window.set_icon(Some(&icon.inner.into()));
-                    //     }
-                    // }
-                    // WindowRequest::UserAttention(request_type) => {
-                    //     window.set_urgency_hint(request_type.is_some())
-                    // }
-                    WindowRequest::SetSkipTaskbar(skip) => {
-                        window.set_skip_taskbar_hint(skip);
-                        window.set_skip_pager_hint(skip)
-                    }
-                    WindowRequest::SetVisibleOnAllWorkspaces(visible) => {
-                        if visible {
-                            window.stick();
-                        } else {
-                            window.unstick();
+                    WindowRequest::WindowIcon(window_icon) => {
+                        if let Some(icon) = window_icon {
+                            window.set_icon(Some(&icon.inner.into()));
                         }
                     }
-                    // WindowRequest::CursorIcon(cursor) => {
-                    //     if let Some(gdk_window) = window.window() {
-                    //         let display = window.display();
-                    //         match cursor {
-                    //             Some(cr) => gdk_window.set_cursor(
-                    //                 Cursor::from_name(
-                    //                     &display,
-                    //                     match cr {
-                    //                         CursorIcon::Crosshair => "crosshair",
-                    //                         CursorIcon::Hand => "pointer",
-                    //                         CursorIcon::Arrow => "arrow",
-                    //                         CursorIcon::Move => "move",
-                    //                         CursorIcon::Text => "text",
-                    //                         CursorIcon::Wait => "wait",
-                    //                         CursorIcon::Help => "help",
-                    //                         CursorIcon::Progress => "progress",
-                    //                         CursorIcon::NotAllowed => "not-allowed",
-                    //                         CursorIcon::ContextMenu => "context-menu",
-                    //                         CursorIcon::Cell => "cell",
-                    //                         CursorIcon::VerticalText => "vertical-text",
-                    //                         CursorIcon::Alias => "alias",
-                    //                         CursorIcon::Copy => "copy",
-                    //                         CursorIcon::NoDrop => "no-drop",
-                    //                         CursorIcon::Grab => "grab",
-                    //                         CursorIcon::Grabbing => "grabbing",
-                    //                         CursorIcon::AllScroll => "all-scroll",
-                    //                         CursorIcon::ZoomIn => "zoom-in",
-                    //                         CursorIcon::ZoomOut => "zoom-out",
-                    //                         CursorIcon::EResize => "e-resize",
-                    //                         CursorIcon::NResize => "n-resize",
-                    //                         CursorIcon::NeResize => "ne-resize",
-                    //                         CursorIcon::NwResize => "nw-resize",
-                    //                         CursorIcon::SResize => "s-resize",
-                    //                         CursorIcon::SeResize => "se-resize",
-                    //                         CursorIcon::SwResize => "sw-resize",
-                    //                         CursorIcon::WResize => "w-resize",
-                    //                         CursorIcon::EwResize => "ew-resize",
-                    //                         CursorIcon::NsResize => "ns-resize",
-                    //                         CursorIcon::NeswResize => "nesw-resize",
-                    //                         CursorIcon::NwseResize => "nwse-resize",
-                    //                         CursorIcon::ColResize => "col-resize",
-                    //                         CursorIcon::RowResize => "row-resize",
-                    //                         CursorIcon::Default => "default",
-                    //                     },
-                    //                 )
-                    //                 .as_ref(),
-                    //             ),
-                    //             None => gdk_window.set_cursor(
-                    //                 Cursor::for_display(&display, CursorType::BlankCursor).as_ref(),
-                    //             ),
-                    //         }
-                    //     };
+                    WindowRequest::UserAttention(request_type) => {
+                        window.set_urgency_hint(request_type.is_some())
+                    }
+                    // WindowRequest::SetSkipTaskbar(skip) => {
+                    //     window.set_skip_taskbar_hint(skip);
+                    //     window.set_skip_pager_hint(skip)
                     // }
+                    // WindowRequest::SetVisibleOnAllWorkspaces(visible) => {
+                    //     if visible {
+                    //         window.stick();
+                    //     } else {
+                    //         window.unstick();
+                    //     }
+                    // }
+                    WindowRequest::CursorIcon(cursor) => {
+                        if let Some(gdk_window) = window.window() {
+                            let display = window.display();
+                            match cursor {
+                                Some(cr) => gdk_window.set_cursor(
+                                    Cursor::from_name(
+                                        &display,
+                                        match cr {
+                                            CursorIcon::Crosshair => "crosshair",
+                                            CursorIcon::Hand => "pointer",
+                                            CursorIcon::Arrow => "arrow",
+                                            CursorIcon::Move => "move",
+                                            CursorIcon::Text => "text",
+                                            CursorIcon::Wait => "wait",
+                                            CursorIcon::Help => "help",
+                                            CursorIcon::Progress => "progress",
+                                            CursorIcon::NotAllowed => "not-allowed",
+                                            CursorIcon::ContextMenu => "context-menu",
+                                            CursorIcon::Cell => "cell",
+                                            CursorIcon::VerticalText => "vertical-text",
+                                            CursorIcon::Alias => "alias",
+                                            CursorIcon::Copy => "copy",
+                                            CursorIcon::NoDrop => "no-drop",
+                                            CursorIcon::Grab => "grab",
+                                            CursorIcon::Grabbing => "grabbing",
+                                            CursorIcon::AllScroll => "all-scroll",
+                                            CursorIcon::ZoomIn => "zoom-in",
+                                            CursorIcon::ZoomOut => "zoom-out",
+                                            CursorIcon::EResize => "e-resize",
+                                            CursorIcon::NResize => "n-resize",
+                                            CursorIcon::NeResize => "ne-resize",
+                                            CursorIcon::NwResize => "nw-resize",
+                                            CursorIcon::SResize => "s-resize",
+                                            CursorIcon::SeResize => "se-resize",
+                                            CursorIcon::SwResize => "sw-resize",
+                                            CursorIcon::WResize => "w-resize",
+                                            CursorIcon::EwResize => "ew-resize",
+                                            CursorIcon::NsResize => "ns-resize",
+                                            CursorIcon::NeswResize => "nesw-resize",
+                                            CursorIcon::NwseResize => "nwse-resize",
+                                            CursorIcon::ColResize => "col-resize",
+                                            CursorIcon::RowResize => "row-resize",
+                                            CursorIcon::Default => "default",
+                                        },
+                                    )
+                                    .as_ref(),
+                                ),
+                                None => gdk_window.set_cursor(
+                                    Cursor::for_display(&display, CursorType::BlankCursor).as_ref(),
+                                ),
+                            }
+                        };
+                    }
                     WindowRequest::CursorPosition((x, y)) => {
                         if let Some(cursor) = window
                             .display()

@@ -12,6 +12,7 @@ pub(self) use crate::platform_impl::Fullscreen;
 
 mod eventloop;
 mod monitor;
+mod util;
 mod window;
 
 pub use eventloop::{EventLoop, EventLoopProxy, EventLoopWindowTarget};
