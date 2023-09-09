@@ -3,7 +3,7 @@
 use std::fmt;
 
 use crate::{
-    event::Event,
+    event::{DeviceId as RootDeviceId, Event},
     event_loop::{ControlFlow, EventLoopWindowTarget as RootELW},
 };
 
@@ -132,6 +132,9 @@ impl DeviceId {
         Self(0)
     }
 }
+
+// TODO: currently we use a dummy device id, find if we can get device id from gtk
+pub(crate) const DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(0));
 
 fn sticky_exit_callback<T, F>(
     evt: Event<'_, T>,
