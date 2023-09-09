@@ -32,12 +32,12 @@ pub mod windows;
 // #[cfg(x11_platform)]
 // pub mod x11;
 
-// #[cfg(any(
-//     windows_platform,
-//     macos_platform,
-//     android_platform,
-//     x11_platform,
-//     wayland_platform,
-//     orbital_platform
-// ))]
-// pub mod run_return;
+#[cfg(any(
+    windows_platform,
+    macos_platform,
+    android_platform,
+    x11_platform,
+    wayland_platform,
+    orbital_platform
+))]
+pub mod run_return;

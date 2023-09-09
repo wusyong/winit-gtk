@@ -11,6 +11,7 @@ pub(crate) use crate::icon::RgbaIcon as PlatformIcon;
 pub(self) use crate::platform_impl::Fullscreen;
 
 mod eventloop;
+mod keyboard;
 mod monitor;
 mod util;
 mod window;
@@ -22,10 +23,10 @@ pub use window::Window;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Backend {
-    #[cfg(x11_platform)]
-    X,
-    #[cfg(wayland_platform)]
-    Wayland,
+    // #[cfg(x11_platform)]
+    // X,
+    // #[cfg(wayland_platform)]
+    // Wayland,
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]

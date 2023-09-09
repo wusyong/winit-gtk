@@ -706,11 +706,6 @@ impl Window {
     }
 
     #[inline]
-    pub fn pre_present_notify(&self) {
-        todo!()
-    }
-
-    #[inline]
     pub fn current_monitor(&self) -> Option<MonitorHandle> {
         todo!()
     }

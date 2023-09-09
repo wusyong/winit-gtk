@@ -3,6 +3,7 @@ use std::{
     collections::{HashSet, VecDeque},
     process,
     rc::Rc,
+    sync::atomic::{AtomicU32, Ordering},
     time::Instant,
 };
 
@@ -10,7 +11,7 @@ use cairo::{RectangleInt, Region};
 use crossbeam_channel::SendError;
 use gdk::{
     prelude::{ApplicationExt, DisplayExtManual},
-    Cursor, CursorType, EventMask, ScrollDirection, WindowEdge, WindowState,
+    Cursor, CursorType, EventKey, EventMask, ScrollDirection, WindowEdge, WindowState,
 };
 use gio::Cancellable;
 use glib::{Continue, MainContext, ObjectType, Priority};
@@ -24,8 +25,8 @@ use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle, XlibDisplayHandl
 use crate::{
     dpi::{LogicalPosition, LogicalSize},
     event::{
-        ElementState, Event, ModifiersState, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
-        WindowEvent,
+        ElementState, Event, KeyboardInput, ModifiersState, MouseButton, MouseScrollDelta,
+        StartCause, TouchPhase, WindowEvent,
     },
     event_loop::{
         ControlFlow, DeviceEventFilter, EventLoopClosed, EventLoopWindowTarget as RootELW,
@@ -34,6 +35,7 @@ use crate::{
 };
 
 use super::{
+    keyboard,
     monitor::MonitorHandle,
     util,
     window::{hit_test, WindowRequest},
@@ -496,246 +498,238 @@ impl<T: 'static> EventLoop<T> {
                           Inhibit(false)
                         });
 
-                                    let tx_clone = event_tx.clone();
-                                    window.connect_leave_notify_event(move |_, _| {
-                                        if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                            window_id: RootWindowId(id),
-                                            event: WindowEvent::CursorLeft {
-                                                device_id: DEVICE_ID,
-                                            },
-                                        }) {
-                                            log::warn!(
-                                                "Failed to send cursor left event to event channel: {}",
-                                                e
-                                            );
-                                        }
-                                        Inhibit(false)
-                                    });
+                        let tx_clone = event_tx.clone();
+                        window.connect_leave_notify_event(move |_, _| {
+                            if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                window_id: RootWindowId(id),
+                                event: WindowEvent::CursorLeft {
+                                    device_id: DEVICE_ID,
+                                },
+                            }) {
+                                log::warn!(
+                                    "Failed to send cursor left event to event channel: {}",
+                                    e
+                                );
+                            }
+                            Inhibit(false)
+                        });
 
-                                    let tx_clone = event_tx.clone();
-                                    window.connect_button_press_event(move |_, event| {
-                                        let button = event.button();
-                                        if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                            window_id: RootWindowId(id),
-                                            event: WindowEvent::MouseInput {
-                                                button: match button {
-                                                    1 => MouseButton::Left,
-                                                    2 => MouseButton::Middle,
-                                                    3 => MouseButton::Right,
-                                                    _ => MouseButton::Other(button as u16),
-                                                },
-                                                state: ElementState::Pressed,
-                                                device_id: DEVICE_ID,
-                                                // this field is depracted so it is fine to pass empty state
-                                                modifiers: ModifiersState::empty(),
-                                            },
-                                        }) {
-                                            log::warn!(
-                                                "Failed to send mouse input preseed event to event channel: {}",
-                                                e
-                                            );
-                                        }
-                                        Inhibit(false)
-                                    });
+                        let tx_clone = event_tx.clone();
+                        window.connect_button_press_event(move |_, event| {
+                            let button = event.button();
+                            if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                window_id: RootWindowId(id),
+                                event: WindowEvent::MouseInput {
+                                    button: match button {
+                                        1 => MouseButton::Left,
+                                        2 => MouseButton::Middle,
+                                        3 => MouseButton::Right,
+                                        _ => MouseButton::Other(button as u16),
+                                    },
+                                    state: ElementState::Pressed,
+                                    device_id: DEVICE_ID,
+                                    // this field is depracted so it is fine to pass empty state
+                                    modifiers: ModifiersState::empty(),
+                                },
+                            }) {
+                                log::warn!(
+                                    "Failed to send mouse input preseed event to event channel: {}",
+                                    e
+                                );
+                            }
+                            Inhibit(false)
+                        });
 
-                                    let tx_clone = event_tx.clone();
-                                    window.connect_button_release_event(move |_, event| {
-                                        let button = event.button();
-                                        if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                            window_id: RootWindowId(id),
-                                            event: WindowEvent::MouseInput {
-                                                button: match button {
-                                                    1 => MouseButton::Left,
-                                                    2 => MouseButton::Middle,
-                                                    3 => MouseButton::Right,
-                                                    _ => MouseButton::Other(button as u16),
-                                                },
-                                                state: ElementState::Released,
-                                                device_id: DEVICE_ID,
-                                                // this field is depracted so it is fine to pass empty state
-                                                modifiers: ModifiersState::empty(),
-                                            },
-                                        }) {
-                                            log::warn!(
-                              "Failed to send mouse input released event to event channel: {}",
-                              e
-                            );
-                                        }
-                                        Inhibit(false)
-                                    });
+                        let tx_clone = event_tx.clone();
+                        window.connect_button_release_event(move |_, event| {
+                            let button = event.button();
+                            if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                window_id: RootWindowId(id),
+                                event: WindowEvent::MouseInput {
+                                    button: match button {
+                                        1 => MouseButton::Left,
+                                        2 => MouseButton::Middle,
+                                        3 => MouseButton::Right,
+                                        _ => MouseButton::Other(button as u16),
+                                    },
+                                    state: ElementState::Released,
+                                    device_id: DEVICE_ID,
+                                    // this field is depracted so it is fine to pass empty state
+                                    modifiers: ModifiersState::empty(),
+                                },
+                            }) {
+                                log::warn!(
+                                    "Failed to send mouse input released event to event channel: {}",
+                                    e
+                                );
+                            }
+                            Inhibit(false)
+                        });
 
-                                    let tx_clone = event_tx.clone();
-                                    window.connect_scroll_event(move |_, event| {
-                                        let (x, y) = event.delta();
-                                        if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                            window_id: RootWindowId(id),
-                                            event: WindowEvent::MouseWheel {
-                                                device_id: DEVICE_ID,
-                                                delta: MouseScrollDelta::LineDelta(-x as f32, -y as f32),
-                                                phase: match event.direction() {
-                                                    ScrollDirection::Smooth => TouchPhase::Moved,
-                                                    _ => TouchPhase::Ended,
-                                                },
-                                                modifiers: ModifiersState::empty(),
-                                            },
-                                        }) {
-                                            log::warn!("Failed to send scroll event to event channel: {}", e);
-                                        }
-                                        Inhibit(false)
-                                    });
+                        let tx_clone = event_tx.clone();
+                        window.connect_scroll_event(move |_, event| {
+                            let (x, y) = event.delta();
+                            if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                window_id: RootWindowId(id),
+                                event: WindowEvent::MouseWheel {
+                                    device_id: DEVICE_ID,
+                                    delta: MouseScrollDelta::LineDelta(-x as f32, -y as f32),
+                                    phase: match event.direction() {
+                                        ScrollDirection::Smooth => TouchPhase::Moved,
+                                        _ => TouchPhase::Ended,
+                                    },
+                                    modifiers: ModifiersState::empty(),
+                                },
+                            }) {
+                                log::warn!("Failed to send scroll event to event channel: {}", e);
+                            }
+                            Inhibit(false)
+                        });
 
-                            // TODO DroppedFile
-                            // TODO HoveredFile
-                            // TODO HoveredFileCancelled
-                            // TODO ReceivedCharacter
-                            // TODO KeyboardInput
-                            // TODO ModifiersChanged
-                            // TODO Ime
-                            // TODO TouchpadMagnify
-                            // TODO SmartMagnify
-                            // TODO TouchpadRotate
-                            // TODO TouchpadPressure
-                            // TODO AxisMotion
-                            // TODO Touch
-                            // TODO ScaleFactorChanged
-                            // TODO ThemeChanged
-                            // TODO Occluded
-                        //             let tx_clone = event_tx.clone();
-                        //             let keyboard_handler =
-                        //                 Rc::new(move |event_key: EventKey, element_state| {
-                        //                     // if we have a modifier lets send it
-                        //                     let mut mods = keyboard::get_modifiers(event_key.clone());
-                        //                     if !mods.is_empty() {
-                        //                         // if we release the modifier tell the world
-                        //                         if ElementState::Released == element_state {
-                        //                             mods = ModifiersState::empty();
-                        //                         }
+                        // TODO TouchpadMagnify
+                        // TODO TouchpadRotate
+                        // TODO Touch
+                        // TODO TouchpadPressure X
+                        //
+                        // TODO ReceivedCharacter
+                        // TODO Ime
+                        //
+                        // TODO ScaleFactorChanged
+                        //
+                        // TODO DroppedFile
+                        // TODO HoveredFile
+                        // TODO HoveredFileCancelled
+                        //
+                        // TODO ThemeChanged
+                        // TODO SmartMagnify X
+                        // TODO AxisMotion X
+                        // TODO Occluded X
 
-                        //                         if let Err(e) = tx_clone.send(Event::WindowEvent {
-                        //                             window_id: RootWindowId(id),
-                        //                             event: WindowEvent::ModifiersChanged(mods),
-                        //                         }) {
-                        //                             log::warn!(
-                        //         "Failed to send modifiers changed event to event channel: {}",
-                        //         e
-                        //       );
-                        //                         } else {
-                        //                             // stop here we don't want to send the key event
-                        //                             // as we emit the `ModifiersChanged`
-                        //                             return Continue(true);
-                        //                         }
-                        //                     }
+                        let tx_clone = event_tx.clone();
+                        let modifiers = AtomicU32::new(ModifiersState::empty().bits());
+                        let keyboard_handler =
+                            Rc::new(move |event_key: EventKey, element_state| {
+                                // if we have a modifier lets send it
+                                let new_mods = keyboard::get_modifiers(&event_key);
+                                    if new_mods.bits() != modifiers.load(Ordering::Relaxed) {
+                                    modifiers.store(new_mods.bits(), Ordering::Relaxed);
+                                    if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                        window_id: RootWindowId(id),
+                                        event: WindowEvent::ModifiersChanged(new_mods),
+                                    }) {
+                                        log::warn!("Failed to send modifiers changed event to event channel: {}",e);
+                                    }
+                                }
 
-                        //                     // TODO: implement repeat?
-                        //                     let event = keyboard::make_key_event(
-                        //                         &event_key,
-                        //                         false,
-                        //                         None,
-                        //                         element_state,
-                        //                     );
 
-                        //                     if let Some(event) = event {
-                        //                         if let Err(e) = tx_clone.send(Event::WindowEvent {
-                        //                             window_id: RootWindowId(id),
-                        //                             event: WindowEvent::KeyboardInput {
-                        //                                 device_id: DEVICE_ID,
-                        //                                 event,
-                        //                                 is_synthetic: false,
-                        //                             },
-                        //                         }) {
-                        //                             log::warn!(
-                        //                                 "Failed to send keyboard event to event channel: {}",
-                        //                                 e
-                        //                             );
-                        //                         }
-                        //                     }
-                        //                     Continue(true)
-                        //                 });
+                                let virtual_key = keyboard::gdk_key_to_virtual_key(event_key.keyval());
+                                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                    window_id: RootWindowId(id),
+                                    event: WindowEvent::KeyboardInput {
+                                        device_id: DEVICE_ID,
+                                        input: KeyboardInput {
+                                            scancode: event_key.scancode() as u32,
+                                            state: element_state,
+                                            virtual_keycode: virtual_key,
+                                            modifiers: new_mods,
+                                        },
+                                        is_synthetic: false,
+                                    },
+                                }) {
+                                    log::warn!(
+                                        "Failed to send keyboard event to event channel: {}",
+                                        e
+                                    );
+                                }
 
-                                    // let tx_clone = event_tx.clone();
-                                    // // TODO Add actual IME from system
-                                    // let ime = gtk::IMContextSimple::default();
-                                    // ime.set_client_window(window.window().as_ref());
-                                    // ime.focus_in();
-                                    // ime.connect_commit(move |_, s| {
-                                    //     if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                    //         window_id: RootWindowId(id),
-                                    //         event: WindowEvent::ReceivedImeText(s.to_string()),
-                                    //     }) {
-                                    //         log::warn!(
-                                    //             "Failed to send received IME text event to event channel: {}",
-                                    //             e
-                                    //         );
-                                    //     }
-                                    // });
+                                Continue(true)
+                            });
 
-                        //             let handler = keyboard_handler.clone();
-                        //             window.connect_key_press_event(move |_, event_key| {
-                        //                 handler(event_key.to_owned(), ElementState::Pressed);
-                        //                 ime.filter_keypress(event_key);
+                            //     let tx_clone = event_tx.clone();
+                            //     // TODO Add actual IME from system
+                            //     let ime = gtk::IMContextSimple::default();
+                            //     ime.set_client_window(window.window().as_ref());
+                            //     ime.focus_in();
+                            //     ime.connect_commit(move |_, s| {
+                            // let c = s.chars().collect::<Vec<char>>();
+                            //         if let Err(e) = tx_clone.send(Event::WindowEvent {
+                            //             window_id: RootWindowId(id),
+                            //             event: WindowEvent::ReceivedCharacter(c[0]),
+                            //         }) {
+                            //             log::warn!(
+                            //                 "Failed to send received IME text event to event channel: {}",
+                            //                 e
+                            //             );
+                            //         }
+                            //     });
 
-                        //                 Inhibit(false)
-                        //             });
+                            let handler = keyboard_handler.clone();
+                            window.connect_key_press_event(move |_, event_key| {
+                                handler(event_key.to_owned(), ElementState::Pressed);
+                                // ime.filter_keypress(event_key);
 
-                        //             let handler = keyboard_handler.clone();
-                        //             window.connect_key_release_event(move |_, event_key| {
-                        //                 handler(event_key.to_owned(), ElementState::Released);
-                        //                 Inhibit(false)
-                        //             });
+                                Inhibit(false)
+                            });
 
-                                    let tx_clone = event_tx.clone();
-                                    window.connect_window_state_event(move |window, event| {
-                                        let state = event.changed_mask();
-                                        if state.contains(WindowState::ICONIFIED)
-                                            || state.contains(WindowState::MAXIMIZED)
-                                        {
-                                            let scale_factor = window.scale_factor();
+                            let handler = keyboard_handler.clone();
+                            window.connect_key_release_event(move |_, event_key| {
+                                handler(event_key.to_owned(), ElementState::Released);
+                                Inhibit(false)
+                            });
 
-                                            let (x, y) = window.position();
-                                            if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                                window_id: RootWindowId(id),
-                                                event: WindowEvent::Moved(
-                                                    LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                                                ),
-                                            }) {
-                                                log::warn!(
-                                                    "Failed to send window moved event to event channel: {}",
-                                                    e
-                                                );
-                                            }
+                        let tx_clone = event_tx.clone();
+                        window.connect_window_state_event(move |window, event| {
+                            let state = event.changed_mask();
+                            if state.contains(WindowState::ICONIFIED)
+                                || state.contains(WindowState::MAXIMIZED)
+                            {
+                                let scale_factor = window.scale_factor();
 
-                                            let (w, h) = window.size();
-                                            if let Err(e) = tx_clone.send(Event::WindowEvent {
-                                                window_id: RootWindowId(id),
-                                                event: WindowEvent::Resized(
-                                                    LogicalSize::new(w, h).to_physical(scale_factor as f64),
-                                                ),
-                                            }) {
-                                                log::warn!(
-                                                    "Failed to send window resized event to event channel: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                        Inhibit(false)
-                                    });
+                                let (x, y) = window.position();
+                                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                    window_id: RootWindowId(id),
+                                    event: WindowEvent::Moved(
+                                        LogicalPosition::new(x, y).to_physical(scale_factor as f64),
+                                    ),
+                                }) {
+                                    log::warn!(
+                                        "Failed to send window moved event to event channel: {}",
+                                        e
+                                    );
+                                }
 
-                                    // Receive draw events of the window.
-                                    let draw_clone = draw_tx.clone();
-                                    window.connect_draw(move |_, cr| {
-                                        if let Err(e) = draw_clone.send(id) {
-                                            log::warn!("Failed to send redraw event to event channel: {}", e);
-                                        }
+                                let (w, h) = window.size();
+                                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                                    window_id: RootWindowId(id),
+                                    event: WindowEvent::Resized(
+                                        LogicalSize::new(w, h).to_physical(scale_factor as f64),
+                                    ),
+                                }) {
+                                    log::warn!(
+                                        "Failed to send window resized event to event channel: {}",
+                                        e
+                                    );
+                                }
+                            }
+                            Inhibit(false)
+                        });
 
-                                        if transparent {
-                                            cr.set_source_rgba(0., 0., 0., 0.);
-                                            cr.set_operator(cairo::Operator::Source);
-                                            let _ = cr.paint();
-                                            cr.set_operator(cairo::Operator::Over);
-                                        }
+                        // Receive draw events of the window.
+                        let draw_clone = draw_tx.clone();
+                        window.connect_draw(move |_, cr| {
+                            if let Err(e) = draw_clone.send(id) {
+                                log::warn!("Failed to send redraw event to event channel: {}", e);
+                            }
 
-                                        Inhibit(false)
-                                    });
+                            if transparent {
+                                cr.set_source_rgba(0., 0., 0., 0.);
+                                cr.set_operator(cairo::Operator::Source);
+                                let _ = cr.paint();
+                                cr.set_operator(cairo::Operator::Over);
+                            }
+
+                            Inhibit(false)
+                        });
                     }
                 }
             }
