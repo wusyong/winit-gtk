@@ -17,7 +17,7 @@ use gio::Cancellable;
 use glib::{Continue, MainContext, ObjectType, Priority};
 use gtk::{
     prelude::WidgetExtManual,
-    traits::{GtkApplicationExt, GtkWindowExt, IMContextExt, WidgetExt},
+    traits::{GtkApplicationExt, GtkWindowExt, WidgetExt},
     Inhibit,
 };
 use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle, XlibDisplayHandle};
@@ -68,7 +68,7 @@ impl<T: 'static> Clone for EventLoopProxy<T> {
 }
 
 impl<T: 'static> EventLoop<T> {
-    pub(crate) fn new(attributes: &PlatformSpecificEventLoopAttributes) -> Self {
+    pub(crate) fn new(_attributes: &PlatformSpecificEventLoopAttributes) -> Self {
         let context = MainContext::default();
         let app = gtk::Application::new(None, gio::ApplicationFlags::empty());
         let app_ = app.clone();
@@ -185,10 +185,10 @@ impl<T: 'static> EventLoop<T> {
                     WindowRequest::UserAttention(request_type) => {
                         window.set_urgency_hint(request_type.is_some())
                     }
-                    // WindowRequest::SetSkipTaskbar(skip) => {
-                    //     window.set_skip_taskbar_hint(skip);
-                    //     window.set_skip_pager_hint(skip)
-                    // }
+                    WindowRequest::SetSkipTaskbar(skip) => {
+                        window.set_skip_taskbar_hint(skip);
+                        window.set_skip_pager_hint(skip)
+                    }
                     // WindowRequest::SetVisibleOnAllWorkspaces(visible) => {
                     //     if visible {
                     //         window.stick();
@@ -276,7 +276,6 @@ impl<T: 'static> EventLoop<T> {
                     // WindowRequest::ProgressBarState(_) => unreachable!(),
                     WindowRequest::WireUpEvents {
                         transparent,
-                        cursor_moved,
                     } => {
                         window.add_events(
                             EventMask::POINTER_MOTION_MASK
@@ -478,7 +477,6 @@ impl<T: 'static> EventLoop<T> {
 
                         let tx_clone = event_tx.clone();
                         window.connect_motion_notify_event(move |window, motion| {
-                          if cursor_moved {
                             if let Some(cursor) = motion.device() {
                               let scale_factor = window.scale_factor();
                               let (_, x, y) = cursor.window_at_position();
@@ -493,7 +491,6 @@ impl<T: 'static> EventLoop<T> {
                               }) {
                                 log::warn!("Failed to send cursor moved event to event channel: {}", e);
                               }
-                            }
                           }
                           Inhibit(false)
                         });
@@ -623,6 +620,7 @@ impl<T: 'static> EventLoop<T> {
 
 
                                 let virtual_key = keyboard::gdk_key_to_virtual_key(event_key.keyval());
+                                #[allow(deprecated)]
                                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                                     window_id: RootWindowId(id),
                                     event: WindowEvent::KeyboardInput {
@@ -721,7 +719,7 @@ impl<T: 'static> EventLoop<T> {
                                 log::warn!("Failed to send redraw event to event channel: {}", e);
                             }
 
-                            if transparent {
+                            if transparent.load(Ordering::Relaxed) {
                                 cr.set_source_rgba(0., 0., 0., 0.);
                                 cr.set_operator(cairo::Operator::Source);
                                 let _ = cr.paint();

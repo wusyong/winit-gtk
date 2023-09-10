@@ -17,11 +17,6 @@ impl MonitorHandle {
     }
 
     #[inline]
-    pub fn native_identifier(&self) -> u32 {
-        todo!()
-    }
-
-    #[inline]
     pub fn size(&self) -> PhysicalSize<u32> {
         let rect = self.monitor.geometry();
         LogicalSize {

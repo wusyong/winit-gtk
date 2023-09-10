@@ -52,14 +52,11 @@ pub(crate) enum WindowRequest {
     AlwaysOnTop(bool),
     WindowIcon(Option<Icon>),
     UserAttention(Option<UserAttentionType>),
-    // SetSkipTaskbar(bool),
+    SetSkipTaskbar(bool),
     CursorIcon(Option<CursorIcon>),
     CursorPosition((i32, i32)),
     CursorIgnoreEvents(bool),
-    WireUpEvents {
-        transparent: bool,
-        cursor_moved: bool,
-    },
+    WireUpEvents { transparent: Rc<AtomicBool> },
     // SetVisibleOnAllWorkspaces(bool),
     // ProgressBarState(ProgressBarState),
 }
@@ -80,6 +77,7 @@ pub struct Window {
     fullscreen: RefCell<Option<Fullscreen>>,
     min_size: RefCell<Option<Size>>,
     max_size: RefCell<Option<Size>>,
+    transparent: Rc<AtomicBool>,
     /// Draw event Sender
     draw_tx: crossbeam_channel::Sender<WindowId>,
 }
@@ -224,8 +222,9 @@ impl Window {
             window.hide();
         }
 
-        // TODO add parent window
-        // if let Parent::ChildOf(parent) = pl_attribs.parent {
+        // TODO it's impossible to set parent window from raw handle.
+        // We need a gtk variant of it.
+        // if let Some(parent) = attribs.parent_window {
         //     window.set_transient_for(Some(&parent));
         // }
 
@@ -292,15 +291,14 @@ impl Window {
         if attribs.transparent && pl_attribs.auto_transparent {
             transparent = true;
         }
+        let transparent = Rc::new(AtomicBool::new(transparent));
 
         // Send WireUp event to let eventloop handle the rest of window setup to prevent gtk panic
         // in other thread.
-        let cursor_moved = pl_attribs.cursor_moved;
         if let Err(e) = window_requests_tx.send((
             window_id,
             WindowRequest::WireUpEvents {
-                transparent,
-                cursor_moved,
+                transparent: transparent.clone(),
             },
         )) {
             log::warn!("Fail to send wire up events request: {}", e);
@@ -324,10 +322,10 @@ impl Window {
             fullscreen: RefCell::new(fullscreen),
             min_size: RefCell::new(attribs.min_inner_size),
             max_size: RefCell::new(attribs.min_inner_size),
+            transparent,
         };
 
-        // TODO
-        // win.set_skip_taskbar(pl_attribs.skip_taskbar);
+        win.set_skip_taskbar(pl_attribs.skip_taskbar);
 
         Ok(win)
     }
@@ -349,7 +347,7 @@ impl Window {
 
     #[inline]
     pub fn set_transparent(&self, transparent: bool) {
-        todo!()
+        self.transparent.store(transparent, Ordering::Relaxed);
     }
 
     #[inline]
@@ -453,12 +451,13 @@ impl Window {
 
     #[inline]
     pub fn resize_increments(&self) -> Option<PhysicalSize<u32>> {
-        todo!()
+        // TODO implement this
+        None
     }
 
     #[inline]
-    pub fn set_resize_increments(&self, increments: Option<Size>) {
-        todo!()
+    pub fn set_resize_increments(&self, _increments: Option<Size>) {
+        // TODO implement this
     }
 
     #[inline]
@@ -477,13 +476,14 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_enabled_buttons(&self, buttons: WindowButtons) {
-        todo!()
+    pub fn set_enabled_buttons(&self, _buttons: WindowButtons) {
+        // TODO implement this
     }
 
     #[inline]
     pub fn enabled_buttons(&self) -> WindowButtons {
-        todo!()
+        // TODO implement this
+        WindowButtons::empty()
     }
 
     #[inline]
@@ -497,8 +497,9 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
-        todo!()
+    pub fn set_cursor_grab(&self, _mode: CursorGrabMode) -> Result<(), ExternalError> {
+        // TODO implement this
+        Ok(())
     }
 
     #[inline]
@@ -528,13 +529,21 @@ impl Window {
     }
 
     #[inline]
-    pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
-        todo!()
+    pub fn drag_resize_window(&self, _direction: ResizeDirection) -> Result<(), ExternalError> {
+        // TODO implement this
+        Ok(())
     }
 
     #[inline]
     pub fn set_cursor_hittest(&self, hittest: bool) -> Result<(), ExternalError> {
-        todo!()
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::CursorIgnoreEvents(!hittest)))
+        {
+            log::warn!("Fail to send cursor position request: {}", e);
+        }
+
+        Ok(())
     }
 
     #[inline]
@@ -653,28 +662,18 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_ime_cursor_area(&self, position: Position, size: Size) {
-        todo!()
+    pub fn set_ime_position(&self, _position: Position) {
+        // TODO implement this
     }
 
     #[inline]
-    pub fn reset_dead_keys(&self) {
-        todo!()
+    pub fn set_ime_allowed(&self, _allowed: bool) {
+        // TODO implement this
     }
 
     #[inline]
-    pub fn set_ime_position(&self, position: Position) {
-        todo!()
-    }
-
-    #[inline]
-    pub fn set_ime_allowed(&self, allowed: bool) {
-        todo!()
-    }
-
-    #[inline]
-    pub fn set_ime_purpose(&self, purpose: ImePurpose) {
-        todo!()
+    pub fn set_ime_purpose(&self, _purpose: ImePurpose) {
+        // TODO implement this
     }
 
     #[inline]
@@ -707,17 +706,43 @@ impl Window {
 
     #[inline]
     pub fn current_monitor(&self) -> Option<MonitorHandle> {
-        todo!()
+        let display = self.window.display();
+        // `.window()` returns `None` if the window is invisible;
+        // we fallback to the primary monitor
+        if let Some(monitor) = self
+            .window
+            .window()
+            .map(|window| display.monitor_at_window(&window))
+            .unwrap_or_else(|| display.primary_monitor())
+        {
+            Some(MonitorHandle { monitor })
+        } else {
+            None
+        }
     }
 
     #[inline]
     pub fn available_monitors(&self) -> VecDeque<MonitorHandle> {
-        todo!()
+        let mut handles = VecDeque::new();
+        let display = self.window.display();
+        let numbers = display.n_monitors();
+
+        for i in 0..numbers {
+            let monitor = MonitorHandle::new(&display, i);
+            handles.push_back(monitor);
+        }
+
+        handles
     }
 
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        todo!()
+        let display = self.window.display();
+        if let Some(monitor) = display.primary_monitor() {
+            Some(MonitorHandle { monitor })
+        } else {
+            None
+        }
     }
 
     fn is_wayland(&self) -> bool {
@@ -773,7 +798,26 @@ impl Window {
 
     #[inline]
     pub fn set_theme(&self, theme: Option<Theme>) {
-        todo!()
+        if let Some(settings) = Settings::default() {
+            if let Some(preferred_theme) = theme {
+                match preferred_theme {
+                    Theme::Dark => settings.set_gtk_application_prefer_dark_theme(true),
+                    Theme::Light => {
+                        let theme_name = settings.gtk_theme_name().map(|t| t.as_str().to_owned());
+                        if let Some(theme) = theme_name {
+                            // Remove dark variant.
+                            if let Some(theme) = GTK_THEME_SUFFIX_LIST
+                                .iter()
+                                .find(|t| theme.ends_with(*t))
+                                .map(|v| theme.strip_suffix(v))
+                            {
+                                settings.set_gtk_theme_name(theme);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[inline]
@@ -789,10 +833,6 @@ impl Window {
         return Some(Theme::Light);
     }
 
-    pub fn set_content_protected(&self, protected: bool) {
-        todo!()
-    }
-
     #[inline]
     pub fn has_focus(&self) -> bool {
         self.window.is_active()
@@ -803,6 +843,15 @@ impl Window {
             .title()
             .map(|t| t.as_str().to_string())
             .unwrap_or_default()
+    }
+
+    pub fn set_skip_taskbar(&self, skip: bool) {
+        if let Err(e) = self
+            .window_requests_tx
+            .send((self.window_id, WindowRequest::SetSkipTaskbar(skip)))
+        {
+            log::warn!("Fail to send skip taskbar request: {}", e);
+        }
     }
 }
 
