@@ -994,6 +994,7 @@ impl<T> EventLoopWindowTarget<T> {
             };
             RawDisplayHandle::Wayland(display_handle)
         } else {
+            #[allow(unused_mut)]
             let mut display_handle = XlibDisplayHandle::empty();
             #[cfg(x11_platform)]
             unsafe {
@@ -1003,7 +1004,6 @@ impl<T> EventLoopWindowTarget<T> {
                     display_handle.screen = (xlib.XDefaultScreen)(display) as _;
                 }
             }
-
             RawDisplayHandle::Xlib(display_handle)
         }
     }
