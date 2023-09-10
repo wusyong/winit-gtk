@@ -708,11 +708,11 @@ impl Window {
         let display = self.window.display();
         // `.window()` returns `None` if the window is invisible;
         // we fallback to the primary monitor
-        self.window
-            .window()
-            .map(|window| display.monitor_at_window(&window))
-            .unwrap_or_else(|| display.primary_monitor())
-            .map(|monitor| MonitorHandle { monitor })
+         self
+             .window
+             .window()
+              .map(|window| display.monitor_at_window(&window))
+              .unwrap_or_else(|| display.primary_monitor()).map(|monitor| MonitorHandle { monitor })
     }
 
     #[inline]
@@ -732,9 +732,7 @@ impl Window {
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         let display = self.window.display();
-        display
-            .primary_monitor()
-            .map(|monitor| MonitorHandle { monitor })
+        display.primary_monitor().map(|monitor| MonitorHandle { monitor })
     }
 
     fn is_wayland(&self) -> bool {

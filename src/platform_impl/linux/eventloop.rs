@@ -732,7 +732,7 @@ impl<T: 'static> EventLoop<T> {
         });
 
         // Create event loop itself.
-        let event_loop = Self {
+        Self {
             window_target: RootELW {
                 p: window_target,
                 _marker: std::marker::PhantomData,
@@ -740,9 +740,7 @@ impl<T: 'static> EventLoop<T> {
             user_event_tx,
             events: event_rx,
             draws: draw_rx,
-        };
-
-        event_loop
+        }
     }
     /// Creates an `EventLoopProxy` that can be used to dispatch user events to the main event loop.
     pub fn create_proxy(&self) -> EventLoopProxy<T> {
@@ -980,10 +978,7 @@ impl<T> EventLoopWindowTarget<T> {
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         let monitor = self.display.primary_monitor();
-        monitor.and_then(|monitor| {
-            let handle = MonitorHandle { monitor };
-            Some(handle)
-        })
+        monitor.map(|monitor| MonitorHandle { monitor })
     }
 
     #[inline]

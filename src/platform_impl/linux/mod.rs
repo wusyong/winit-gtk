@@ -5,7 +5,7 @@ use std::fmt;
 use crate::event::DeviceId as RootDeviceId;
 
 pub(crate) use crate::icon::RgbaIcon as PlatformIcon;
-pub(self) use crate::platform_impl::Fullscreen;
+use crate::platform_impl::Fullscreen;
 
 mod eventloop;
 mod keyboard;
