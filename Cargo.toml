@@ -1,6 +1,6 @@
 [package]
-name = "winit"
-version = "0.28.6"
+name = "winit-gtk"
+version = "0.1.0"
 description = "Cross-platform window creation library."
 edition = "2021"
 keywords = ["windowing"]
@@ -8,10 +8,12 @@ license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/wusyong/winit-gtk"
 documentation = "https://docs.rs/winit-gtk"
-rust-version = "1.60.0"
+
+[lib]
+name = "winit"
 
 [package.metadata.docs.rs]
-features = ["serde"]
+features = [ "serde", "dox" ]
 default-target = "x86_64-unknown-linux-gnu"
 # These are all tested in CI
 targets = [
@@ -23,14 +25,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
-x11 = ["x11-dl", "mio", "percent-encoding"]
-wayland = ["wayland-client", "wayland-protocols", "sctk", "wayland-commons"]
-wayland-dlopen = ["sctk/dlopen", "wayland-client/dlopen"]
-wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/ab_glyph"]
-wayland-csd-adwaita-crossfont = ["sctk-adwaita", "sctk-adwaita/crossfont"]
-wayland-csd-adwaita-notitle = ["sctk-adwaita"]
+x11 = []
+wayland = []
+wayland-dlopen = []
+wayland-csd-adwaita = []
+wayland-csd-adwaita-crossfont = []
+wayland-csd-adwaita-notitle = []
 android-native-activity = [ "android-activity/native-activity" ]
 android-game-activity = [ "android-activity/game-activity" ]
+dox = [ "gtk/dox" ]
 
 [build-dependencies]
 cfg_aliases = "0.1.1"
@@ -91,30 +94,16 @@ features = [
 ]
 
 [target.'cfg(all(unix, not(any(target_os = "redox", target_arch = "wasm32", target_os = "android", target_os = "ios", target_os = "macos"))))'.dependencies]
-libc = "0.2.64"
-mio = { version = "0.8", features = ["os-ext"], optional = true }
-percent-encoding = { version = "2.0", optional = true }
-sctk = { package = "smithay-client-toolkit", version = "0.16.0", default_features = false, features = ["calloop"],  optional = true }
-sctk-adwaita = { version = "0.5.1", default_features = false, optional = true }
-wayland-client = { version = "0.29.5", default_features = false,  features = ["use_system_lib"], optional = true }
-wayland-protocols = { version = "0.29.5", features = [ "staging_protocols"], optional = true }
-wayland-commons = { version = "0.29.5", optional = true }
-x11-dl = { version = "2.18.5", optional = true }
-
+x11-dl = { version = "2.18.5" }
 cairo-rs = "0.16"
 gio = "0.16"
 glib = "0.16"
-glib-sys = "0.16"
 gtk = "0.16"
 gdk = "0.16"
 gdk-sys = "0.16"
 gdkx11-sys = "0.16"
 gdkwayland-sys = "0.16.0"
 gdk-pixbuf = "0.16"
-zbus = "3"
-uuid = { version = "1.3", features = [ "v4" ] }
-png = "0.17"
-parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
 [target.'cfg(target_os = "redox")'.dependencies]
