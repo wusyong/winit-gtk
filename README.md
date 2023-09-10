@@ -3,7 +3,9 @@
 `winit-gtk` is winit fork with GTK backend. While we are waiting [winit#2430](https://github.com/rust-windowing/winit/pull/2430), you can use this crate already by adding cargo patch to your project. 
 
 The minor version of `winit-gtk` should match to the exact `winit` version. Here is the compatibility table:
-TODO
+| winit  | winit-gtk |
+| 0.28.6 | 0.28      |
+
 
 ## Usage
 
