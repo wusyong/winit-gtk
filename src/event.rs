@@ -54,7 +54,7 @@ pub enum Event<'a, T: 'static> {
     ///
     /// This event type is useful as a place to put code that should be done before you start
     /// processing events, such as updating frame timing information for benchmarking or checking
-    /// the [`StartCause`][crate::event::StartCause] to see if a timer set by
+    /// the [`StartCause`] to see if a timer set by
     /// [`ControlFlow::WaitUntil`](crate::event_loop::ControlFlow::WaitUntil) has elapsed.
     NewEvents(StartCause),
 
@@ -184,7 +184,7 @@ pub enum Event<'a, T: 'static> {
     /// state-changing events have been handled and you want to do stuff (updating state, performing
     /// calculations, etc) that happens as the "main body" of your event loop. If your program only draws
     /// graphics when something changes, it's usually better to do it in response to
-    /// [`Event::RedrawRequested`](crate::event::Event::RedrawRequested), which gets emitted
+    /// [`Event::RedrawRequested`], which gets emitted
     /// immediately after this event. Programs that draw graphics continuously, like most games,
     /// can render here unconditionally for simplicity.
     MainEventsCleared,

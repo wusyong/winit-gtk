@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [stable, nightly, '1.65.0']
+        toolchain: [stable, nightly]
         platform:
           # Note: Make sure that we test all the `docs.rs` targets defined in Cargo.toml!
           - { name: 'Linux 32bit',        target: i686-unknown-linux-gnu,   os: ubuntu-latest,   }
@@ -90,13 +90,10 @@ jobs:
 
     - name: Build tests
       if: >
-        !contains(matrix.platform.target, 'redox') &&
-        matrix.toolchain != '1.65.0'
+        !contains(matrix.platform.target, 'redox')
       run: cargo $CMD test --no-run $OPTIONS
 
     - name: Run tests
-      if: >
-        matrix.toolchain != '1.65.0'
       run: cargo $CMD test $OPTIONS
 
     - name: Lint with clippy
@@ -104,13 +101,9 @@ jobs:
       run: cargo clippy --all-targets $OPTIONS -- -Dwarnings
 
     - name: Build tests with serde enabled
-      if: >
-        matrix.toolchain != '1.65.0'
       run: cargo $CMD test --no-run $OPTIONS --features serde
 
     - name: Run tests with serde enabled
-      if: >
-        matrix.toolchain != '1.65.0'
       run: cargo $CMD test $OPTIONS --features serde
 
     # See restore step above
