@@ -4,6 +4,7 @@
 
 The minor version of `winit-gtk` should match to the exact `winit` version. Here is the compatibility table:
 | winit  | winit-gtk |
+| :-:    | :-------: |
 | 0.28.6 | 0.28      |
 
 
