@@ -855,6 +855,11 @@ impl Window {
     }
 }
 
+// We need to keep GTK window which isn't thread safe.
+// We make sure all non thread safe window calls are sent to event loop to handle.
+unsafe impl Send for Window {}
+unsafe impl Sync for Window {}
+
 /// A constant used to determine how much inside the window, the resize handler should appear (only used in Linux(gtk) and Windows).
 /// You probably need to scale it by the scale_factor of the window.
 pub const BORDERLESS_RESIZE_INSET: i32 = 5;
