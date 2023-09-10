@@ -27,7 +27,6 @@ jobs:
         toolchain: [stable, nightly]
         platform:
           # Note: Make sure that we test all the `docs.rs` targets defined in Cargo.toml!
-          - { name: 'Linux 32bit',        target: i686-unknown-linux-gnu,   os: ubuntu-latest,   }
           - { name: 'Linux 64bit',        target: x86_64-unknown-linux-gnu, os: ubuntu-latest,   }
           - { name: 'X11',                target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: '--no-default-features --features=x11' }
           - { name: 'Wayland',            target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: '--no-default-features --features=wayland,wayland-dlopen' }
@@ -77,10 +76,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libgtk-3-dev
-
-    - name: Install GCC Multilib
-      if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
-      run: sudo apt-get update && sudo apt-get install gcc-multilib
 
     - name: Check documentation
       run: cargo doc --no-deps $OPTIONS --document-private-items

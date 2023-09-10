@@ -995,6 +995,7 @@ impl<T> EventLoopWindowTarget<T> {
             RawDisplayHandle::Wayland(display_handle)
         } else {
             let mut display_handle = XlibDisplayHandle::empty();
+            #[cfg(x11_platform)]
             unsafe {
                 if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
                     let display = (xlib.XOpenDisplay)(std::ptr::null());

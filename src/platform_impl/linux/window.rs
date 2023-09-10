@@ -6,6 +6,7 @@ use std::{
 };
 
 use gdk::{prelude::DisplayExtManual, WindowEdge, WindowState};
+use gdkx11::X11Window;
 use glib::{translate::ToGlibPtr, Cast, ObjectType};
 use gtk::{
     traits::{ApplicationWindowExt, ContainerExt, GtkWindowExt, SettingsExt, WidgetExt},
@@ -754,10 +755,9 @@ impl Window {
             RawWindowHandle::Wayland(window_handle)
         } else {
             let mut window_handle = XlibWindowHandle::empty();
-            unsafe {
-                if let Some(window) = self.window.window() {
-                    window_handle.window =
-                        gdk_x11_sys::gdk_x11_window_get_xid(window.as_ptr() as *mut _);
+            if let Some(window) = self.window.window() {
+                if let Some(window) = window.downcast_ref::<X11Window>() {
+                    window_handle.window = window.xid();
                 }
             }
             RawWindowHandle::Xlib(window_handle)
@@ -776,6 +776,7 @@ impl Window {
             RawDisplayHandle::Wayland(display_handle)
         } else {
             let mut display_handle = XlibDisplayHandle::empty();
+            #[cfg(x11_platform)]
             unsafe {
                 if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
                     let display = (xlib.XOpenDisplay)(std::ptr::null());
@@ -783,7 +784,6 @@ impl Window {
                     display_handle.screen = (xlib.XDefaultScreen)(display) as _;
                 }
             }
-
             RawDisplayHandle::Xlib(display_handle)
         }
     }
