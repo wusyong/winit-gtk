@@ -47,6 +47,7 @@ impl ApplicationName {
 #[derive(Clone)]
 pub struct PlatformSpecificWindowBuilderAttributes {
     pub name: Option<ApplicationName>,
+    pub parent: Option<gtk::Window>,
     pub skip_taskbar: bool,
     pub auto_transparent: bool,
     pub double_buffered: bool,
@@ -59,6 +60,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
     fn default() -> Self {
         Self {
             name: None,
+            parent: None,
             skip_taskbar: Default::default(),
             auto_transparent: true,
             double_buffered: true,

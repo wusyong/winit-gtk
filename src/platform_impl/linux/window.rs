@@ -224,9 +224,9 @@ impl Window {
 
         // TODO it's impossible to set parent window from raw handle.
         // We need a gtk variant of it.
-        // if let Some(parent) = attribs.parent_window {
-        //     window.set_transient_for(Some(&parent));
-        // }
+        if let Some(parent) = pl_attribs.parent {
+            window.set_transient_for(Some(&parent));
+        }
 
         // TODO I don't understand why unfocussed window need focus
         // restore accept-focus after the window has been drawn

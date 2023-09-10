@@ -583,24 +583,21 @@ impl<T: 'static> EventLoop<T> {
                             Inhibit(false)
                         });
 
-                        // TODO TouchpadMagnify
-                        // TODO TouchpadRotate
-                        // TODO Touch
-                        // TODO TouchpadPressure X
-                        //
-                        // TODO ReceivedCharacter
-                        // TODO Ime
-                        //
-                        // TODO ScaleFactorChanged
-                        //
-                        // TODO DroppedFile
-                        // TODO HoveredFile
-                        // TODO HoveredFileCancelled
-                        //
-                        // TODO ThemeChanged
-                        // TODO SmartMagnify X
-                        // TODO AxisMotion X
-                        // TODO Occluded X
+                        // TODO Follwong WindowEvents are missing see #2 for mor info.
+                        // - Touch
+                        // - TouchpadMagnify
+                        // -  TouchpadRotate
+                        // -  TouchpadPressure
+                        // -  SmartMagnify
+                        // -  ReceivedCharacter
+                        // -  Ime
+                        // - ScaleFactorChanged
+                        // - DroppedFile
+                        // - HoveredFile
+                        // - HoveredFileCancelled
+                        // - ThemeChanged
+                        // - AxisMotion
+                        // - Occluded
 
                         let tx_clone = event_tx.clone();
                         let modifiers = AtomicU32::new(ModifiersState::empty().bits());
