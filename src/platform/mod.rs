@@ -43,4 +43,4 @@ pub mod windows;
 pub mod run_return;
 
 #[cfg(any(x11_platform, wayland_platform,))]
-pub mod gtk;
+pub mod unix;

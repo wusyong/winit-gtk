@@ -6,6 +6,8 @@ use crate::{
     window::{Window, WindowBuilder},
 };
 
+pub use crate::platform_impl::hit_test;
+
 /// Additional methods on `Window` that are specific to Unix.
 pub trait WindowExtUnix {
     /// Returns the `gtk::ApplicatonWindow` from gtk crate that is used by this window.

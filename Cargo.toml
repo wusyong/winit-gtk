@@ -1,6 +1,6 @@
 [package]
 name = "winit-gtk"
-version = "0.28.0"
+version = "0.28.1"
 description = "Cross-platform window creation library."
 edition = "2021"
 keywords = ["windowing"]

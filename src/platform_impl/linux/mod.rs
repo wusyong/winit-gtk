@@ -16,7 +16,7 @@ mod window;
 pub use eventloop::{EventLoop, EventLoopProxy, EventLoopWindowTarget};
 use gdk_pixbuf::{Colorspace, Pixbuf};
 pub use monitor::{MonitorHandle, VideoMode};
-pub use window::Window;
+pub use window::{hit_test, Window};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Backend {
