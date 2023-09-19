@@ -48,7 +48,12 @@ impl MonitorHandle {
 
     #[inline]
     pub fn video_modes(&self) -> Box<dyn Iterator<Item = VideoMode>> {
-        Box::new(Vec::new().into_iter())
+        Box::new(
+            vec![VideoMode {
+                monitor: self.monitor.clone(),
+            }]
+            .into_iter(),
+        )
     }
 }
 
@@ -56,26 +61,41 @@ unsafe impl Send for MonitorHandle {}
 unsafe impl Sync for MonitorHandle {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct VideoMode;
+pub struct VideoMode {
+    /// gdk::Screen is deprecated. We make VideoMode and MonitorHandle
+    /// being the same type. If we want to enrich this feature. We will
+    /// need to look for x11/wayland implementations.
+    pub(crate) monitor: gdk::Monitor,
+}
 
 impl VideoMode {
     #[inline]
     pub fn size(&self) -> PhysicalSize<u32> {
-        todo!("VideoMode isn't implemented yet.")
+        let rect = self.monitor.geometry();
+        LogicalSize {
+            width: rect.width() as u32,
+            height: rect.height() as u32,
+        }
+        .to_physical(self.monitor.scale_factor() as f64)
     }
 
     #[inline]
     pub fn bit_depth(&self) -> u16 {
-        todo!("VideoMode isn't implemented yet.")
+        32
     }
 
     #[inline]
     pub fn refresh_rate_millihertz(&self) -> u32 {
-        todo!("VideoMode isn't implemented yet.")
+        self.monitor.refresh_rate() as u32
     }
 
     #[inline]
     pub fn monitor(&self) -> MonitorHandle {
-        todo!("VideoMode isn't implemented yet.")
+        MonitorHandle {
+            monitor: self.monitor.clone(),
+        }
     }
 }
+
+unsafe impl Send for VideoMode {}
+unsafe impl Sync for VideoMode {}

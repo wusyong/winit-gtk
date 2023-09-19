@@ -152,20 +152,24 @@ impl<T: 'static> EventLoop<T> {
                     }
                     WindowRequest::Fullscreen(fullscreen) => match fullscreen {
                         Some(f) => {
-                            if let Some(Fullscreen::Borderless(m)) = f.into() {
-                                if let Some(monitor) = m {
-                                    let display = window.display();
-                                    let monitors = display.n_monitors();
-                                    for i in 0..monitors {
-                                        let m = display.monitor(i).unwrap();
-                                        if m == monitor.monitor {
-                                            let screen = display.default_screen();
-                                            window.fullscreen_on_monitor(&screen, i);
-                                        }
+                            let m = match f {
+                                Fullscreen::Exclusive(m) => Some(m.monitor),
+                                Fullscreen::Borderless(Some(m)) => Some(m.monitor),
+                                _ => None,
+                            };
+
+                            if let Some(monitor) = m {
+                                let display = window.display();
+                                let monitors = display.n_monitors();
+                                for i in 0..monitors {
+                                    let m = display.monitor(i).unwrap();
+                                    if m == monitor {
+                                        let screen = display.default_screen();
+                                        window.fullscreen_on_monitor(&screen, i);
                                     }
-                                } else {
-                                    window.fullscreen();
                                 }
+                            } else {
+                                window.fullscreen();
                             }
                         }
                         None => window.unfullscreen(),
