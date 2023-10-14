@@ -14,11 +14,10 @@ use gdk::{
     Cursor, CursorType, EventKey, EventMask, ScrollDirection, WindowEdge, WindowState,
 };
 use gio::Cancellable;
-use glib::{Continue, MainContext, ObjectType, Priority};
+use glib::{MainContext, ObjectType, Priority};
 use gtk::{
-    prelude::WidgetExtManual,
+    prelude::{DeviceExt, SeatExt, WidgetExtManual},
     traits::{GtkApplicationExt, GtkWindowExt, WidgetExt},
-    Inhibit,
 };
 use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle, XlibDisplayHandle};
 
@@ -319,7 +318,7 @@ impl<T: 'static> EventLoop<T> {
                                     );
                                 }
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
                         window.connect_button_press_event(|window, event| {
                             if !window.is_decorated()
@@ -347,7 +346,7 @@ impl<T: 'static> EventLoop<T> {
                                 }
                             }
 
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
                         window.connect_touch_event(|window, event| {
                             if !window.is_decorated() && window.is_resizable() {
@@ -373,7 +372,7 @@ impl<T: 'static> EventLoop<T> {
                                 }
                             }
 
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -387,7 +386,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(true)
+                            glib::Propagation::Stop
                         });
 
                         let tx_clone = event_tx.clone();
@@ -433,7 +432,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -447,7 +446,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -476,7 +475,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -496,7 +495,7 @@ impl<T: 'static> EventLoop<T> {
                                 log::warn!("Failed to send cursor moved event to event channel: {}", e);
                               }
                           }
-                          Inhibit(false)
+                          glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -512,7 +511,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -538,7 +537,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -564,7 +563,7 @@ impl<T: 'static> EventLoop<T> {
                                     e
                                 );
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         let tx_clone = event_tx.clone();
@@ -584,7 +583,7 @@ impl<T: 'static> EventLoop<T> {
                             }) {
                                 log::warn!("Failed to send scroll event to event channel: {}", e);
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         // TODO Follwong WindowEvents are missing see #2 for mor info.
@@ -641,7 +640,7 @@ impl<T: 'static> EventLoop<T> {
                                     );
                                 }
 
-                                Continue(true)
+                                glib::ControlFlow::Continue
                             });
 
                             //     let tx_clone = event_tx.clone();
@@ -667,13 +666,13 @@ impl<T: 'static> EventLoop<T> {
                                 handler(event_key.to_owned(), ElementState::Pressed);
                                 // ime.filter_keypress(event_key);
 
-                                Inhibit(false)
+                                glib::Propagation::Proceed
                             });
 
                             let handler = keyboard_handler.clone();
                             window.connect_key_release_event(move |_, event_key| {
                                 handler(event_key.to_owned(), ElementState::Released);
-                                Inhibit(false)
+                                glib::Propagation::Proceed
                             });
 
                         let tx_clone = event_tx.clone();
@@ -710,7 +709,7 @@ impl<T: 'static> EventLoop<T> {
                                     );
                                 }
                             }
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
 
                         // Receive draw events of the window.
@@ -727,12 +726,12 @@ impl<T: 'static> EventLoop<T> {
                                 cr.set_operator(cairo::Operator::Over);
                             }
 
-                            Inhibit(false)
+                            glib::Propagation::Proceed
                         });
                     }
                 }
             }
-            Continue(true)
+            glib::ControlFlow::Continue
         });
 
         // Create event loop itself.

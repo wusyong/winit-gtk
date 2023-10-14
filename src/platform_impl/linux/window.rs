@@ -8,8 +8,9 @@ use std::{
 use gdk::{prelude::DisplayExtManual, WindowEdge, WindowState};
 use glib::{translate::ToGlibPtr, Cast, ObjectType};
 use gtk::{
-    traits::{ApplicationWindowExt, ContainerExt, GtkWindowExt, SettingsExt, WidgetExt},
-    Inhibit, Settings,
+    prelude::GtkSettingsExt,
+    traits::{ApplicationWindowExt, ContainerExt, GtkWindowExt, WidgetExt},
+    Settings,
 };
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
@@ -242,7 +243,7 @@ impl Window {
         //             window.set_accept_focus(true);
         //             window.disconnect(id);
         //         }
-        //         Inhibit(false)
+        //         glib::Propagation::Proceed
         //     });
         //     signal_id.borrow_mut().replace(id);
         // }
@@ -279,7 +280,7 @@ impl Window {
             let state = event.new_window_state();
             max_clone.store(state.contains(WindowState::MAXIMIZED), Ordering::Release);
             minimized_clone.store(state.contains(WindowState::ICONIFIED), Ordering::Release);
-            Inhibit(false)
+            glib::Propagation::Proceed
         });
 
         // Set scale factor callback
