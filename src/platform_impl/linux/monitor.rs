@@ -1,4 +1,5 @@
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize};
+use gdk::prelude::MonitorExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MonitorHandle {
