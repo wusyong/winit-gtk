@@ -160,23 +160,25 @@ impl Window {
         // Rest attributes
         window.set_title(&attribs.title);
         let fullscreen = attribs.fullscreen.map(|f| f.into());
-        let m = match fullscreen {
-            Some(Fullscreen::Exclusive(ref m)) => Some(&m.monitor),
-            Some(Fullscreen::Borderless(Some(ref m))) => Some(&m.monitor),
-            _ => None,
-        };
-        if let Some(monitor) = m {
-            let display = window.display();
-            let monitors = display.n_monitors();
-            for i in 0..monitors {
-                let m = display.monitor(i).unwrap();
-                if &m == monitor {
-                    let screen = display.default_screen();
-                    window.fullscreen_on_monitor(&screen, i);
+        if fullscreen != None {
+            let m = match fullscreen {
+                Some(Fullscreen::Exclusive(ref m)) => Some(&m.monitor),
+                Some(Fullscreen::Borderless(Some(ref m))) => Some(&m.monitor),
+                _ => None,
+            };
+            if let Some(monitor) = m {
+                let display = window.display();
+                let monitors = display.n_monitors();
+                for i in 0..monitors {
+                    let m = display.monitor(i).unwrap();
+                    if &m == monitor {
+                        let screen = display.default_screen();
+                        window.fullscreen_on_monitor(&screen, i);
+                    }
                 }
+            } else {
+                window.fullscreen();
             }
-        } else {
-            window.fullscreen();
         }
         window.set_visible(attribs.visible);
         window.set_decorated(attribs.decorations);

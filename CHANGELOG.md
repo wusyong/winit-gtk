@@ -6,6 +6,14 @@ Please keep one empty line before and after all headers. (This is required for `
 
 And please only add new entries to the top of this list, right below the `# Unreleased` header.
 
+# 0.29.1
+
+- Fix window becomes fullscreen by default.
+
+# 0.29.0
+
+- Update to gtk 0.18
+
 # 0.28.2
 
 - Add `VideoMode`.
